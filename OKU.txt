@@ -1,0 +1,42 @@
+README’deki tanıma göre uygulama iki iş yapacak: gıda ve ilaçların son kullanma tarihleri için alarm kurmak, ve eklediğin ilaç/gıdalar için sağlık verilerine göre öneri sunmak.
+
+Uygulama nasıl işleyecek
+Kullanıcı bir profil oluşturur: yaş, kronik hastalıklar, alerjiler, düzenli kullandığı ilaçlar.
+İlaç veya gıda ekler: barkod/karekod okutarak ya da elle.
+Son kullanma tarihi kaydedilir ve bildirimler planlanır (örneğin 30, 7 ve 1 gün önce).
+Uygulama eklenen ürünü profille karşılaştırır, örneğin alerjen uyarısı, ilaç-ilaç veya ilaç-gıda etkileşimi.
+Ana ekranda “yakında bitenler”, “süresi geçenler” ve uyarılar görünür.
+Yapım aşamaları
+
+1. Planlama: Özellikleri öncelik sırasına koy. İlk sürüm (MVP) sadece ürün ekleme, tarih takibi ve alarm olsun. Öneri sistemi ikinci aşamaya kalmalı.
+
+2. Tasarım: Önce kâğıtta ya da Figma’da 4-5 ekran çizmali: ana liste, ürün ekleme, ürün detay, profil, ayarlar.
+
+3. Temel uygulama: Ürün ekleme formu, yerel veritabanı, liste ekranı.
+
+4. Bildirimler: Planlı yerel bildirimler. En çok sorun çıkan kısım burasıdır: Android’de tam zamanlı alarm izni ve pil optimizasyonu, iOS’ta ise en fazla 64 bekleyen bildirim sınırı var. Bunları erkenden test et.
+
+5. Barkod/karekod ve OCR: Türkiye’deki ilaç kutularında 2D karekod bulunur ve içinde genelde ürün kodu, seri no, parti ve son kullanma tarihi yer alır. Bunu okutmak elle girişi çok azaltır. Gıdalar için Open Food Facts gibi açık bir barkod veritabanı kullanabiliriz. Tarih basılı yazıysa kameradan okumak için OCR eklenebilir.
+
+6. Sağlık profili ve öneri motoru: Önce kural tabanlı başla (alerjen eşleşmesi, bilinen etkileşim listeleri). Veri kaynağı olarak TİTCK’nın yayımladığı ilaç prospektüsleri (KÜB/KT) ve açık etkileşim veritabanları düşünülebilir. İstersek sonradan bir yapay zekâ modeli ekleyip açıklamaları sadeleştirebiliriz, ama API anahtarı uygulamanın içinde değil, kendi sunucunda durmalı.
+
+7. Hesap ve yedekleme (isteğe bağlı): Giriş, bulut yedekleme, birden fazla cihaz.
+
+8. Test ve yayın: Gerçek telefonda test, Google Play ve App Store hesapları, gizlilik politikası.
+
+Hangi teknolojilerle kodlanmalı
+Katman	Öneri
+Uygulama	Flutter (Dart), tek kodla Android ve iOS. Alternatif: React Native (Expo)
+Yerel veritabanı	SQLite (drift) veya Isar. Veriler önce telefonda kalsın
+Bildirim	flutter_local_notifications
+Barkod/karekod	mobile_scanner
+OCR	Google ML Kit text recognition
+Sunucu (gerekirse)	Firebase veya Supabase
+Öneri/yapay zekâ	Ayrı küçük bir sunucu servisi (Node.js veya Python)
+
+Flutter veya Expo seç ve sadece Android’le başlamalı. Android Studio ile emülatörde çalışırsın, iOS için Mac gerekir.
+
+Dikkat etmen gereken iki konu
+Sağlık verisi hassas veridir. Türkiye’de KVKK’da “özel nitelikli kişisel veri” sayılır. Verileri mümkünse sadece telefonda tut, buluta gönderecekse açık rıza al ve şifrele.
+Öneriler tıbbi tavsiye değildir. İlaç etkileşimi gibi konularda yanlış bir öneri gerçek zarar verebilir. Uygulamada “doktor veya eczacına danış” uyarısını açıkça göster, 
+önerileri güvenilir kaynağa dayandır ve yapay zekâ çıktısını tek başına güvenme.
