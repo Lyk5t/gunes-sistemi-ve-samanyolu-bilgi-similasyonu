@@ -9,6 +9,9 @@ PROJE_LIDERI = "Hüseyin Solak"
 
 # Ekip üyeleri: listeye istediğiniz kadar isim ekleyebilirsiniz.
 EKIP = [
-    "Zehra Kınasakal",
+    "Elif Özen",
     "Burçin Karakuş",
+    "Hüseyin Solak",
+    "Sılan Nur Çetinol",
+    "Oğuzhan Öcal",
 ]
