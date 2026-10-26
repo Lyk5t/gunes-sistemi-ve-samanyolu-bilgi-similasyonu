@@ -12,6 +12,6 @@ EKIP = [
     "Elif Özen",
     "Burçin Karakuş",
     "Hüseyin Solak",
-    "Sılan Nur Çetinol",
+    "Sıla Nur Çetinol",
     "Oğuzhan Öcal",
 ]
