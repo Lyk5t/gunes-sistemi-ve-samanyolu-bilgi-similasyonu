@@ -17,6 +17,7 @@ from ursina.color import Color
 from ursina.prefabs.input_field import InputField
 
 import gezegenler
+from acilis import Acilis
 from arayuz import YAZI_OLCEK, Dugme, Kaydirici, Yazi, dongu_dugme
 from sahne import CANLI, Gezegen3B, hx, sahne_kur
 
@@ -434,5 +435,6 @@ class Uygulama(Entity):
 
 if __name__ == "__main__":
     app = Ursina(title="Samanyolu 3B Gezegen Laboratuvarı", borderless=False)
-    Uygulama()
+    uygulama = Uygulama()
+    Acilis(uygulama)          # Büyük Patlama açılışı; bitince ana ekran gelir
     app.run()
