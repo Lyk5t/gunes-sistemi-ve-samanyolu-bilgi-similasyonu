@@ -90,7 +90,8 @@ class Uygulama(Entity):
     def ekle(self, v, ozel=False):
         g = Gezegen3B(v, ozel, len(self.gezegenler))
         self.gezegenler.append(g)
-        self.etiketler[g] = Yazi(parent=camera.ui, text=v["ad"], origin=(0, 0), scale=.85,
+        # scale=.85 olan değeri scale=1.6 olarak değiştirdik
+        self.etiketler[g] = Yazi(parent=camera.ui, text=v["ad"], origin=(0, 0), scale=1.6,
                                  color=hx(v["renk"], 1, 1.15))
         return g
 
@@ -137,8 +138,7 @@ class Uygulama(Entity):
                on_click=lambda: self.hiz_degis(1))
         Dugme(parent=ui, text="+ Yeni gezegen", position=(-.51, -.465), scale=(.16, .04),
                color=Color(1, .37, .63, 1), on_click=self.form_ac)
-        Yazi(parent=ui, text="Sürükle: döndür   Tekerlek: yakınlaştır   Gezegene tıkla: seç",
-             position=(-.40, -.452), scale=.7, color=SOLUK)
+        Yazi(parent=ui, text="Sürükle: döndür   Tekerlek: yakınlaştır   Gezegene tıkla: seç", position=(-.40, -.452), scale=1.7, color=SOLUK)
 
     def form_kur(self):
         f = self.form = Entity(parent=camera.ui, enabled=False)
@@ -220,17 +220,36 @@ class Uygulama(Entity):
         for b in self.btn:
             destroy(b)
         self.btn = []
+
+        # --- KORUMA KALKANI BAŞLANGICI ---
+        def sabitle(buton, olcek):
+            try:
+                buton.scale = olcek
+            except Exception:
+                pass # Buton silinmişse çökertmek yerine sessizce yut
+        # --- KORUMA KALKANI BİTİŞİ ---
+
         ad = [("Güneş Sistemi", None, "#ffd36b")] + [(g.v["ad"], g, g.v["renk"]) for g in self.gezegenler]
         n = len(ad) - 1
         bas_w, bosluk = .15, .008
         w = min(.092, (1.6 - bas_w - bosluk * (n + 1)) / max(1, n))
         x = -.86
+        
         for i, (t, g, renk) in enumerate(ad):
             gw = bas_w if i == 0 else w
             secili = g is self.secili
             b = Dugme(parent=camera.ui, text=t, position=(x + gw / 2, .465), scale=(gw, .04),
                       color=hx(renk, 1, 1 if secili else .38), on_click=lambda g=g: self.sec(g))
             b.text_color = Color(.05, .05, .12, 1) if secili else YAZI
+            
+            # --- BUG ÇÖZÜMÜ BURADA BAŞLIYOR ---
+            # Fare üzerine geldiğinde veya ayrıldığında ölçeğin (scale) bozulmamasını garantiliyoruz
+            b.orijinal_olcek = (gw, .04)
+            b.on_mouse_enter = lambda b=b, gw=gw: sabitle(b, (gw, .04))
+            b.on_mouse_exit = lambda b=b, gw=gw: sabitle(b, (gw, .04))
+            # -----------------------------
+            # --- BUG ÇÖZÜMÜ BURADA BİTİYOR ---
+
             self.btn.append(b)
             x += gw + bosluk
 
