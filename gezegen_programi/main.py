@@ -92,6 +92,7 @@ class Uygulama(Entity):
         g = Gezegen3B(v, ozel, len(self.gezegenler))
         self.gezegenler.append(g)
         # scale=.85 olan değeri scale=1.6 olarak değiştirdik
+        # scale=.85 olan değeri scale=1.6 olarak değiştirdik
         self.etiketler[g] = Yazi(parent=camera.ui, text=v["ad"], origin=(0, 0), scale=2.0,
                                  color=hx(v["renk"], 1, 1.15))
         return g
@@ -238,19 +239,19 @@ class Uygulama(Entity):
         bas_w, bosluk = .15, .008
         w = min(.092, (1.6 - bas_w - bosluk * (n + 1)) / max(1, n))
         x = -.86
-        
+
         for i, (t, g, renk) in enumerate(ad):
             gw = bas_w if i == 0 else w
             secili = g is self.secili
-            
+
             # Yüksekliği .04'ten .06'ya çıkardık
             b = Dugme(parent=camera.ui, text=t, position=(x + gw / 2, .465), scale=(gw, .06),
                       color=hx(renk, 1, 1 if secili else .38), on_click=lambda g=g: self.sec(g))
             b.text_color = Color(.05, .05, .12, 1) if secili else YAZI
-            
+
             # Yazıyı bozmadan uygun boyuta (0.8) ayarlayan kod
-            b.text_entity.scale *= 1.6 
-            
+            b.text_entity.scale *= 1.6
+
             # Parlatma (Hover) komutu
             b.orijinal_renk = b.color
             b.on_mouse_enter = lambda b=b: fare_durumu(b, True)
@@ -424,20 +425,19 @@ class Uygulama(Entity):
         for g in self.gezegenler:
             g.guncelle(self.T, dt, self.calisiyor)
         self.kamera(dt)
-        
         # --- GEZEGEN İSİMLERİNİN DİNAMİK YÜKSEKLİK AYARI ---
         for g, t in self.etiketler.items():
             p = g.govde.position
             if (Vec3(*p) - camera.world_position).dot(camera.forward) > 0:
                 sp = g.govde.screen_position
                 # y_offset ile yazıyı gezegenin üstüne tam oturtuyoruz
-                y_offset = 0.05 + (g.r * 0.015) 
+                y_offset = 0.05 + (g.r * 0.015)
                 t.position = (sp[0], sp[1] + y_offset)
                 t.enabled = True
             else:
                 t.enabled = False
         # ---------------------------------------------------
-        
+
         self.canli_t += dt
         if self.canli_t > .5 and self.secili is not None:
             self.canli_t = 0
@@ -445,7 +445,17 @@ class Uygulama(Entity):
 
 
 if __name__ == "__main__":
+    # Kenar yumuşatma (MSAA): gezegen kenarları ve halkalar pürüzsüz görünür.
+    # Ekran kartınız desteklemezse bu iki satırı silin.
+    from panda3d.core import loadPrcFileData
+    loadPrcFileData("", "framebuffer-multisample 1\nmultisamples 4")
     app = Ursina(title="Samanyolu 3B Gezegen Laboratuvarı", borderless=False)
+    try:
+        from panda3d.core import AntialiasAttrib
+        application.base.render.setAntialias(AntialiasAttrib.MAuto)
+    except Exception:
+        pass
+    print("Gezegenler hazırlanıyor, birkaç saniye sürebilir...")
     uygulama = Uygulama()
     Acilis(uygulama)          # Büyük Patlama açılışı; bitince ana ekran gelir
     app.run()
