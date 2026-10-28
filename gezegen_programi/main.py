@@ -16,6 +16,7 @@ from ursina import (Button, Entity, Mesh, Text, Ursina, Vec3, application, camer
 from ursina.color import Color
 from ursina.prefabs.input_field import InputField
 
+import bilgiler
 import gezegenler
 from acilis import Acilis
 from arayuz import YAZI_OLCEK, Dugme, Kaydirici, Yazi, dongu_dugme
@@ -118,6 +119,7 @@ class Uygulama(Entity):
         self.p_bilgi = Yazi(parent=ui, text=" ", position=(PX, .33), scale=.8, color=SOLUK)
         self.p_bilgi.wordwrap = int(24 / YAZI_OLCEK)
         self.p_stat = Yazi(parent=ui, text=" ", position=(PX, .205), scale=.8, color=YAZI)
+        self.p_stat.wordwrap = int(24 / YAZI_OLCEK)
         self.p_atm = Yazi(parent=ui, text="ATMOSFER BİLEŞİMİ", position=(PX, .105), scale=.75)
         self.canli_grup = Entity(parent=ui)
         self.p_canli_baslik = Yazi(parent=self.canli_grup, text="CANLI ATMOSFER VERİSİ (simüle)",
@@ -204,19 +206,48 @@ class Uygulama(Entity):
             satir(hakkinda.BOLUM, 1.0, SOLUK, .06)
         else:
             y -= .02
-        satir("PROJE LİDERİ", .8, ALTIN, .035)
-        satir(hakkinda.PROJE_LIDERI, 1.2, YAZI, .065)
-        satir("EKİP", .8, ALTIN, .035)
-        for ad in hakkinda.EKIP:
-            satir(ad, 1.1, YAZI, .04)
+        # --- Star Wars tarzı kayan yazı: lider ve ekip isimleri perspektifle yukarı süzülür ---
+        Entity(parent=h, model="quad", color=Color(1, .83, .42, .45), scale=(.5, .002), position=(0, .05, -1.06))
+        ALTIN_RGB, SARI_RGB, BEYAZ_RGB = (1, .83, .42), (1, .95, .6), (.93, .92, 1)
+        satirlar = ([("PROJE LİDERİ", 1.0, ALTIN_RGB), (hakkinda.PROJE_LIDERI, 1.7, SARI_RGB),
+                     (None, 0, None), ("EKİP", 1.0, ALTIN_RGB)]
+                    + [(ad, 1.5, BEYAZ_RGB) for ad in hakkinda.EKIP])
+        self.kayan = []
+        for metin, olcek, rgb in satirlar:
+            t = None if metin is None else Yazi(parent=h, text=metin, origin=(0, 0), position=(0, 0, -1.1),
+                                                scale=olcek, color=Color(*rgb, 0))
+            self.kayan.append((t, olcek, rgb))
+        self.kay_t = 0.0
         Dugme(parent=h, text="Kapat", position=(0, -.335, -1.1), scale=(.14, .04),
               color=Color(.25, .27, .5, 1), on_click=self.hakkinda_kapat)
 
     def hakkinda_ac(self):
+        self.kay_t = 0.0
         self.hak.enabled = True
 
     def hakkinda_kapat(self):
         self.hak.enabled = False
+
+    def kayan_yazi(self, dt):
+        """Satırlar aşağıdan (büyük, yakın) yukarıya (küçük, uzak) süzülür ve solar."""
+        self.kay_t += dt * .55                     # kayma hızı (satır/sn); büyütürseniz hızlanır
+        toplam = len(self.kayan) + 3               # döngüde yeni tur öncesi boşluk
+        U, a = 7.0, 2.6                            # görünür derinlik ve perspektif şiddeti
+        y_ust, y_alt = .04, -.29
+        norm = 1 - 1 / (1 + a)
+        for i, (t, olcek, rgb) in enumerate(self.kayan):
+            if t is None:
+                continue
+            u = (self.kay_t - i) % toplam
+            if u > U:
+                t.enabled = False
+                continue
+            t.enabled = True
+            s = 1 / (1 + a * u / U)                # uzaklaştıkça küçülür
+            t.position = (0, y_alt + (y_ust - y_alt) * (1 - s) / norm, -1.1)
+            t.scale = olcek * s * YAZI_OLCEK
+            alfa = min(1, u / .7) * min(1, (U - u) / 2.5)
+            t.color = Color(rgb[0], rgb[1], rgb[2], max(0, alfa))
 
     def butonlari_yenile(self):
         for b in self.btn:
@@ -362,11 +393,14 @@ class Uygulama(Entity):
         g = self.secili
         if g is None:
             self.p_serit.color = Color(1, .8, .4, 1)
-            self.p_ad.text, self.p_ad.color = "Güneş Sistemi", Color(1, .83, .42, 1)
-            self.p_bilgi.text = ("Bir gezegene tıklayın ya da üstteki düğmelerden seçin. "
-                                 "Sol alttaki “+ Yeni gezegen” ile kendi gezegeninizi oluşturup "
-                                 "atmosfer verilerini girebilirsiniz.")
-            self.p_stat.text = " "
+            self.p_ad.text, self.p_ad.color = getattr(bilgiler, "BASLIK", "Güneş Sistemi"), Color(1, .83, .42, 1)
+            aciklama = getattr(bilgiler, "ACIKLAMA", "") or " "
+            maddeler = getattr(bilgiler, "MADDELER", [])
+            self.p_bilgi.text = aciklama
+            # açıklama uzunsa maddeleri aşağı kaydır (satır sayısı yaklaşık hesaplanır)
+            satir = sum(max(1, math.ceil(len(p) / 38)) for p in aciklama.split("\n"))
+            self.p_stat.position = (PX, max(-.3, .33 - satir * .021 - .035))
+            self.p_stat.text = "\n".join(f"{b}: {d}" for b, d in maddeler) or " "
             self.p_atm.enabled = False
             self.canli_grup.enabled = False
             return
@@ -374,6 +408,7 @@ class Uygulama(Entity):
         self.p_serit.color = hx(v["renk"])
         self.p_ad.text, self.p_ad.color = v["ad"], hx(v["renk"], 1, 1.15)
         self.p_bilgi.text = v["bilgi"]
+        self.p_stat.position = (PX, .205)
         km = f"{v['yaricap_km']:,.0f}".replace(",", " ")
         self.p_stat.text = (f"Yarıçap: {km} km\nGüneş’e uzaklık: {v['au']} AU\n"
                             f"Yörünge periyodu: {v['periyot']} gün\nBilinen uydu: {v['uydu']}")
@@ -438,6 +473,8 @@ class Uygulama(Entity):
                 t.enabled = False
         # ---------------------------------------------------
 
+        if self.hak.enabled:
+            self.kayan_yazi(dt)
         self.canli_t += dt
         if self.canli_t > .5 and self.secili is not None:
             self.canli_t = 0
