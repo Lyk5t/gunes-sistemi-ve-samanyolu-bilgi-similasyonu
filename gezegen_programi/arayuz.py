@@ -5,7 +5,7 @@ from ursina.color import Color
 BEYAZ = Color(1, 1, 1, 1)
 
 # Tüm yazıların boyut çarpanı. Yazılar hâlâ büyükse düşürün (0.5), küçükse artırın (0.8).
-YAZI_OLCEK = 0.6
+YAZI_OLCEK = 0.70
 
 
 def Yazi(*args, **kw):
