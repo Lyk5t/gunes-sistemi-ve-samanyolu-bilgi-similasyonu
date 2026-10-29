@@ -79,7 +79,10 @@ class Uygulama(Entity):
         self.yaw, self.pitch, self.dist = 25, 35, 100
         self.dist_h = self.dist
         self.hedef = Vec3(0, 0, 0)
-        self.surukle, self.bas = False, None
+        self.serbest_merkez = Vec3(0, 0, 0)
+        self.surukle_sol = False
+        self.surukle_sag = False
+        self.bas = None
 
         # ---------- ARAYÜZ ----------
         self.panel_kur()
@@ -142,7 +145,7 @@ class Uygulama(Entity):
                on_click=lambda: self.hiz_degis(1))
         Dugme(parent=ui, text="+ Yeni gezegen", position=(-.51, -.465), scale=(.16, .04),
                color=Color(1, .37, .63, 1), on_click=self.form_ac)
-        Yazi(parent=ui, text="Sürükle: döndür   Tekerlek: yakınlaştır   Gezegene tıkla: seç", position=(-.40, -.452), scale=1.7, color=SOLUK)
+        Yazi(parent=ui, text="Sol Tık Sürükle: Döndür  |  Sağ Tık Sürükle: Kaydır  |  Tekerlek: Yakınlaştır", position=(-.40, -.452), scale=1.4, color=SOLUK)
 
     def form_kur(self):
         f = self.form = Entity(parent=camera.ui, enabled=False)
@@ -369,16 +372,22 @@ class Uygulama(Entity):
             self.dist_h = max(2, self.dist_h * .88)
         elif key == "scroll down":
             self.dist_h = min(400, self.dist_h * 1.14)
-        elif key in ("left mouse down", "right mouse down"):
-            self.surukle = not self.ui_ustunde()
+        elif key == "right mouse down":
+            self.surukle_sag = not self.ui_ustunde()
             self.bas = (mouse.x, mouse.y)
-        elif key in ("left mouse up", "right mouse up"):
-            self.surukle = False
-            if key == "left mouse up" and self.bas and abs(mouse.x - self.bas[0]) + abs(mouse.y - self.bas[1]) < .012:
-                for g in self.gezegenler:
-                    if mouse.hovered_entity is g.govde:
-                        self.sec(g)
-                        break
+        elif key == "left mouse down":
+            self.surukle_sol = not self.ui_ustunde()
+            self.bas = (mouse.x, mouse.y)
+        elif key in ("right mouse up", "left mouse up"):
+            if key == "right mouse up":
+                self.surukle_sag = False
+            if key == "left mouse up":
+                self.surukle_sol = False
+                if self.bas and abs(mouse.x - self.bas[0]) + abs(mouse.y - self.bas[1]) < .012:
+                    for g in self.gezegenler:
+                        if mouse.hovered_entity is g.govde:
+                            self.sec(g)
+                            break
         elif key == "escape":
             if self.hak.enabled:
                 self.hakkinda_kapat()
@@ -442,16 +451,37 @@ class Uygulama(Entity):
 
     # ================= her kare =================
     def kamera(self, dt):
-        if self.surukle and Kaydirici.aktif is None and (held_keys["left mouse"] or held_keys["right mouse"]):
-            # Sağ-sol tersliğini düzeltmek için += yerine -= yaptık
+        # SOL TIK: Yörünge etrafında döndürme (Orbit)
+        if getattr(self, "surukle_sol", False) and Kaydirici.aktif is None and held_keys["left mouse"]:
             self.yaw -= mouse.velocity[0] * 120
-            
-            # Yukarı-aşağı zaten kusursuz, BURAYA HİÇ DOKUNMUYORUZ
             self.pitch = max(-85, min(85, self.pitch - mouse.velocity[1] * 100))
             
-        hedef = Vec3(*self.secili.govde.position) if self.secili else Vec3(0, 0, 0)
+        # SAĞ TIK: Serbest sahne kaydırma (Pan)
+        if getattr(self, "surukle_sag", False) and Kaydirici.aktif is None and held_keys["right mouse"]:
+            if self.secili is not None:
+                self.sec(None)
+            
+            pan_hizi = self.dist * 0.04
+            
+            # serbest_merkez değişkeni henüz tanımlanmadıysa hatayı önlemek için:
+            if not hasattr(self, "serbest_merkez"):
+                self.serbest_merkez = Vec3(0, 0, 0)
+                
+            self.serbest_merkez -= camera.right * mouse.velocity[0] * pan_hizi * 50
+            self.serbest_merkez -= camera.up * mouse.velocity[1] * pan_hizi * 50
+
+        # Eğer bir gezegen seçiliyse hedefini o yap, değilse kendi serbest merkezimiz
+        if not hasattr(self, "serbest_merkez"):
+            self.serbest_merkez = Vec3(0, 0, 0)
+            
+        hedef = Vec3(*self.secili.govde.position) if self.secili else self.serbest_merkez
+        
+        if self.secili:
+            self.serbest_merkez = Vec3(hedef.x, hedef.y, hedef.z)
+
         self.hedef += (hedef - self.hedef) * min(1, dt * 8)
         self.dist += (self.dist_h - self.dist) * min(1, dt * 5)
+        
         y, p = math.radians(self.yaw), math.radians(self.pitch)
         camera.position = self.hedef + Vec3(math.sin(y) * math.cos(p), math.sin(p),
                                             -math.cos(y) * math.cos(p)) * self.dist
