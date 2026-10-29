@@ -443,8 +443,12 @@ class Uygulama(Entity):
     # ================= her kare =================
     def kamera(self, dt):
         if self.surukle and Kaydirici.aktif is None and (held_keys["left mouse"] or held_keys["right mouse"]):
-            self.yaw += mouse.velocity[0] * 120
+            # Sağ-sol tersliğini düzeltmek için += yerine -= yaptık
+            self.yaw -= mouse.velocity[0] * 120
+            
+            # Yukarı-aşağı zaten kusursuz, BURAYA HİÇ DOKUNMUYORUZ
             self.pitch = max(-85, min(85, self.pitch - mouse.velocity[1] * 100))
+            
         hedef = Vec3(*self.secili.govde.position) if self.secili else Vec3(0, 0, 0)
         self.hedef += (hedef - self.hedef) * min(1, dt * 8)
         self.dist += (self.dist_h - self.dist) * min(1, dt * 5)
@@ -452,7 +456,6 @@ class Uygulama(Entity):
         camera.position = self.hedef + Vec3(math.sin(y) * math.cos(p), math.sin(p),
                                             -math.cos(y) * math.cos(p)) * self.dist
         camera.look_at(self.hedef)
-
     def update(self):
         dt = time.dt
         if self.calisiyor:
