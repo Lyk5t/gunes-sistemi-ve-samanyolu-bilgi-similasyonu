@@ -265,7 +265,7 @@ GAZ_AYAR = {   # bant ağırlığı, leke (x, y, yatay, dikey: görüntü oranı
     "Jüpiter": dict(bant=.62, firtina=34, leke=(.68, .64, .055, .06, (176, 84, 52), (226, 178, 140))),
     "Satürn": dict(bant=.4, firtina=14),
     "Uranüs": dict(bant=.14, firtina=6),
-    "Neptün": dict(bant=.3, firtina=16, leke=(.3, .45, .045, .045, (16, 30, 100), (150, 180, 255))),
+    "Neptün": dict(bant=.08, firtina=3, leke=(.3, .45, .03, .02, (10, 20, 80), (16, 30, 100))),
 }
 BOYUT = {"Dünya": 2048, "Jüpiter": 2048, "Satürn": 1536}
 

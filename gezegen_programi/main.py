@@ -104,6 +104,38 @@ def _dikles(f, u):
     return f, _norm(u - f * _nokta(u, f))
 
 
+def _yukari_sec(f, up):
+    """'up' ipucunu ileri yönüne dik, birim bir 'yukarı' vektörüne çevirir (ileri ≈ up ise yedeğe geçer)."""
+    u = up - f * _nokta(up, f)
+    if _nokta(u, u) < 1e-8:
+        for alt in (Vec3(0, 0, 1), Vec3(1, 0, 0)):
+            u = alt - f * _nokta(alt, f)
+            if _nokta(u, u) > 1e-8:
+                break
+    return _norm(u)
+
+
+def _yukari_karisim(f, u0, up, t, onceki=None):
+    """'Yukarı' vektörünü u0'dan up'a, bakış ekseni (f) etrafında en kısa dönüşle geçirir (t: 0..1).
+    Tam ters (180°) durumda iki yön de eşit kısadır; 'onceki' verilirse hep aynı yönde döner, kare kare
+    yön değiştirip takla atmaz. (vektör, açı) döner."""
+    a = u0 - f * _nokta(u0, f)
+    b = up - f * _nokta(up, f)
+    if _nokta(a, a) < 1e-8:
+        return _yukari_sec(f, up), (onceki or 0.0)
+    a = _norm(a)
+    if _nokta(b, b) < 1e-8:
+        return a, (onceki or 0.0)
+    b = _norm(b)
+    faz = math.atan2(_nokta(f, _kros(a, b)), _nokta(a, b))
+    if onceki is None:
+        if abs(abs(faz) - math.pi) < 0.05:      # tam ters: yönü sabit seç
+            faz = math.pi
+    else:
+        faz += 2 * math.pi * round((onceki - faz) / (2 * math.pi))     # önceki dönüşle süreklilik
+    return _don(a, f, math.degrees(faz * t)), faz
+
+
 def yon_yaw_pitch(yaw, pitch):
     """Klasik yatay-dikey açıdan (ileri, yukarı) çifti: kamera hedefin etrafında bu açıdadır."""
     y, p = math.radians(yaw), math.radians(pitch)
@@ -186,6 +218,12 @@ class Uygulama(Entity):
         self.yon_hedef = None                 # (ileri, yukarı): R / Işık tarafı animasyonu
         self._yon_modlari = [0, 1, 2]         # camera'yı yönlendirme yöntemleri (otomatik seçilir)
         self.donme_acik = True                # gezegenler kendi ekseninde döner mi
+        self.elle_cevrilen = None             # Shift + sürükle ile tutulan gezegen
+        self.tut_eksen = None                 # onun dönüş ekseni (aci artınca pozitif dönülen yön)
+        self.gecis_bas_up = Vec3(0, 1, 0)     # iniş başlarken kameranın 'yukarı' yönü
+        self.gecis_faz = None                 # inişte ufku düzeltme dönüşü (yön ilk karede sabitlenir)
+        self.tut_q0 = None                    # Shift + sürükle: tutulan yüzey noktası (gezegen merkezine göre)
+        self.tut_birikim = 0.0                # tutulduğundan beri döndürülen toplam açı (derece)
         self.son_tik_zamani = 0.0
         self.son_tik_gezegen = None
         self.odak_eski_nokta = Vec3(0, 0, 0)
@@ -724,6 +762,8 @@ class Uygulama(Entity):
         self.yuzey_surukle = False
         self.hedef_yuzey_gezegen = g
         self.gecis_bas_pos = Vec3(camera.position)
+        self.gecis_bas_up = Vec3(self.kam_u)
+        self.gecis_faz = None
         self.gecis_aktif = True
         self.gecis_t = 0.0
         self.gecis_perde.enabled = True
@@ -937,15 +977,17 @@ class Uygulama(Entity):
         for b in self.btn:
             b.enabled = True
         self.sec(self.hedef_yuzey_gezegen)
-        # yörünge kamerasına ışınlanmak yerine yumuşakça geç
-        self.pos_eski = Vec3(camera.position)
-        self.pos_w = 0.0
+        # Yüzey dünyası sahnede 2000 birim aşağıda: oradan uçarak çıkmak yerine kesip siyahtan açıyoruz
+        self.pos_w = 1.0
+        self.gecis_perde.color = Color(0, 0, 0, 1)
+        self.gecis_perde.enabled = True
         self.odak_w = 1.0
         self.pan_ofset = Vec3(0, 0, 0)
         self.dist_h = max(self.hedef_yuzey_gezegen.r * 5, 2.5)
         self.dist = self.dist_h
         self.w_yat = self.w_dik = 0.0
         self.yon_hedef = None
+        self.kam_f, self.kam_u = _dikles(self.kam_f, _yukari_sec(self.kam_f, Vec3(0, 1, 0)))   # ufuk düz başla
         self.surukle_bitir()
 
     def olustur(self):
@@ -1050,14 +1092,17 @@ class Uygulama(Entity):
             if not self.ui_ustunde():
                 self.sag_tik_menu.enabled = False
                 self.dunya_uyari.enabled = False
+                hedef_g = self.gezegen_altinda() or self.secili
                 if self.ctrl_basili():
                     mod = "pan"                       # Ctrl + sol: kaydır (touchpad için)
-                elif self.shift_basili() and self.secili:
+                elif self.shift_basili() and hedef_g is not None:
                     mod = "gezegen"                   # Shift + sol: gezegeni elle çevir
                 else:
                     mod = "orbit"                     # sol: kamerayı döndür
                 self.surukle_sol = True
                 self.surukle_baslat(mod, "left")
+                if mod == "gezegen":
+                    self.gezegen_tutma_baslat(hedef_g)
 
         elif key in ("right mouse down", "middle mouse down"):
             if not self.ui_ustunde():
@@ -1263,12 +1308,16 @@ class Uygulama(Entity):
         self.kam_f, self.kam_u = _dikles(f, u)
 
     def kamera_yonlendir(self):
-        """camera'yı hedefe, kam_u 'yukarı' olacak şekilde çevirir. Ursina sürümüne göre çalışan yöntemi
-        kendisi bulur ve camera.forward / camera.up ile doğrular."""
-        h = self.hedef
+        """Yörünge kamerası: hedefe bak, kam_u 'yukarı' olsun."""
+        self.kamera_bak(self.hedef, self.kam_u, senkron=True)
+
+    def kamera_bak(self, h, up_ipucu, senkron=False):
+        """camera'yı h noktasına, açıkça verilen 'yukarı' yönüyle çevirir. Ursina'nın look_at'ı 'yukarı'yı
+        kendi seçtiği için eğiklik taşınır ya da sıçrar; burada her zaman biz belirleriz.
+        Çalışan yöntemi kendisi bulur ve camera.forward / camera.up ile doğrular."""
         d = h - camera.position
         f = _norm(d) if d.length() > 1e-6 else self.kam_f
-        u = _norm(self.kam_u - f * _nokta(self.kam_u, f))
+        u = _yukari_sec(f, up_ipucu)
         for mod in self._yon_modlari:
             try:
                 if mod == 0:
@@ -1286,9 +1335,9 @@ class Uygulama(Entity):
             if iyi:
                 self._yon_modlari = [mod] + [m for m in (0, 1, 2) if m != mod]
                 return
-        # hiçbiri tutmadı: klasik look_at (yatay ufuk); geçiş bitmişse temel vektörleri kameradan geri oku
+        # hiçbiri tutmadı: klasik look_at (yatay ufuk); yörüngede temel vektörleri kameradan geri oku
         camera.look_at(h)
-        if self.pos_w >= 1.0:
+        if senkron and self.pos_w >= 1.0:
             try:
                 self.kam_f, self.kam_u = _dikles(Vec3(*camera.forward), Vec3(*camera.up))
             except Exception:
@@ -1320,6 +1369,9 @@ class Uygulama(Entity):
         self.surukle_tus = None
         self.surukle_gecti = False
         self.fare_onceki = None
+        self.elle_cevrilen = None
+        self.tut_eksen = None
+        self.tut_q0 = None
 
     def tiklama_mi(self):
         return self.bas is not None and abs(mouse.x - self.bas[0]) + abs(mouse.y - self.bas[1]) < SURUKLE_ESIK
@@ -1360,23 +1412,103 @@ class Uygulama(Entity):
         else:
             self.sag_tik_menu.enabled = False
 
-    def gezegeni_cevir(self, g, dx, dy):
-        """Shift + sol sürükle: gezegeni kameraya göre elle çevir (eski davranış korundu)."""
-        hass = self.kamera_hassasiyet
+    def gezegen_altinda(self):
+        for g in self.gezegenler:
+            if mouse.hovered_entity in (g.govde, g.bulut, g.atm):
+                return g
+        return None
+
+    def gezegen_tutma_baslat(self, g):
+        """Shift + sürükle başlarken gezegenin gerçek dönüş eksenini bulur ve imlecin altındaki yüzey
+        noktasını 'tutar'. Eksen, aci'yi biraz oynatıp gövdenin 'sağ' vektörünün nereye gittiğinden çıkar;
+        eksen eğikliği (egim_q) ve halka/bulut düzeni hiç bozulmaz."""
+        self.elle_cevrilen = g
+        self.tut_eksen = None
+        self.tut_q0 = None
+        self.tut_birikim = 0.0
         try:
-            from panda3d.core import Quat, Vec3 as PVec3
-            if getattr(g, "q_ok", False):
-                g.aci = 0                          # kendi dönüşünü durdur (fıçı etkisini önler)
-                g.govde.setQuat(g.egim_q)
-                q_cam = g.govde.getQuat(camera)
-                dq = Quat()
-                dq.setHpr(PVec3(-dx * hass * 250, -dy * hass * 250, 0))
-                g.govde.setQuat(camera, q_cam * dq)
-                g.egim_q = g.govde.getQuat()
-            else:
-                g.aci -= dx * 350 * hass
+            a0 = g.aci
+
+            def sag():
+                g.guncelle(self.T, 0.0, False)
+                return Vec3(*g.govde.right)
+            g.aci = a0
+            r0 = sag()
+            g.aci = (a0 + 20.0) % 360
+            r1 = sag()
+            g.aci = a0
+            sag()
+            e = _kros(r0, r1)
+            if e.length() > 1e-6:
+                self.tut_eksen = _norm(e)          # aci arttıkça bu eksen etrafında POZİTİF dönülür
         except Exception:
-            g.aci -= dx * 350 * hass
+            self.tut_eksen = None
+        if self.tut_eksen is not None:
+            P, isabet = self.imlec_noktasi(g, mouse.x, mouse.y)
+            if isabet:                              # imleç gezegenin üstünde: o noktayı tut
+                self.tut_q0 = P - Vec3(*g.govde.world_position)
+
+    def imlec_noktasi(self, g, cx, cy):
+        """İmleç (ekran birimi) altındaki yüzey noktası ve gezegene değip değmediği."""
+        t2 = 2 * math.tan(math.radians(self.vfov()) / 2)
+        f, u = self.kam_f, self.kam_u
+        r = _kros(u, f)
+        O = camera.position
+        C = Vec3(*g.govde.world_position)
+        R = g.r
+        d = _norm(f + r * (cx * t2) + u * (cy * t2))
+        oc = O - C
+        b = _nokta(oc, d)
+        disc = b * b - (_nokta(oc, oc) - R * R)
+        if disc >= 0:
+            return O + d * (-b - math.sqrt(disc)), True
+        return C + _norm(O + d * (-b) - C) * R, False      # dışında: en yakın kenar noktası
+
+    def gezegeni_cevir(self, g, dx, dy):
+        """Shift + sol sürükle: gezegeni KENDİ EKSENİ etrafında çevirir. İlk tıklanan yüzey noktası
+        imleci izler (küre tutma); eksen eğikliği korunur."""
+        eksen = self.tut_eksen
+        if eksen is None:                           # eksen bulunamadıysa basit yatay çevirme
+            g.aci = (g.aci - dx * 350) % 360
+            return
+        mx, my = mouse.x, mouse.y
+        t2 = 2 * math.tan(math.radians(self.vfov()) / 2)
+        f, u = self.kam_f, self.kam_u
+        r = _kros(u, f)
+        O = camera.position
+        C = Vec3(*g.govde.world_position)
+        R = g.r
+        if self.tut_q0 is not None:                 # kapalı çevrim: tutulan nokta -> imleç
+            P = C + _don(self.tut_q0, eksen, self.tut_birikim)
+        else:                                       # imleç gezegen dışında başladı: artımlı çevirme
+            P, _ = self.imlec_noktasi(g, mx - dx / 2, my - dy / 2)
+        rel = P - O
+        z = _nokta(rel, f)
+        if z < 1e-6:
+            return
+        xp, yp = _nokta(rel, r) / z, _nokta(rel, u) / z
+        if self.tut_q0 is not None:
+            ex, ey = mx - xp / t2, my - yp / t2     # imleç ile noktanın ekrandaki farkı
+        else:
+            ex, ey = dx, dy
+        w = _kros(eksen, P - C)                     # aci +1 rad artınca noktanın dünyadaki hızı
+        sx = (_nokta(w, r) - xp * _nokta(w, f)) / (z * t2)    # ... ve ekrandaki hızı
+        sy = (_nokta(w, u) - yp * _nokta(w, f)) / (z * t2)
+        Rs = R / (z * t2)                           # gezegenin ekrandaki yarıçapı
+        payda = max(sx * sx + sy * sy, (0.25 * Rs) ** 2)      # kenara/kutba yakınken patlamasın
+        dth = max(-0.3, min(0.3, (ex * sx + ey * sy) / payda))
+        if self.tut_q0 is not None:                 # nokta arka yüze geçmesin
+            q = P - C
+
+            def yuzlu(qq):
+                pp = C + qq
+                return _nokta(qq, O - pp) / (R * max(1e-9, (O - pp).length()))
+            if yuzlu(_don(q, eksen, math.degrees(dth))) < min(0.08, yuzlu(q)):
+                dth = 0.0
+        derece = math.degrees(dth)
+        self.tut_birikim += derece
+        g.aci = (g.aci + derece) % 360
+        g.guncelle(self.T, 0.0, False)              # görüntü bu karede güncellensin
 
     def kamera_girdi(self, dt):
         """Fare + klavye girdisini kamera yönelimi / kaydırma / yakınlığa çevirir."""
@@ -1410,8 +1542,9 @@ class Uygulama(Entity):
             sag = _kros(self.kam_u, self.kam_f)
             self.pan_ofset = self.pan_ofset - sag * (dx * olcek) - self.kam_u * (dy * olcek)
         elif self.surukle_gecti and self.surukle_mod == "gezegen":
-            if self.secili:
-                self.gezegeni_cevir(self.secili, dx, dy)
+            g = self.elle_cevrilen or self.secili
+            if g:
+                self.gezegeni_cevir(g, dx, dy)
 
         # bırakınca dönüş yavaşlayarak devam eder (atalet)
         if not (self.surukle_gecti and self.surukle_mod == "orbit"):
@@ -1469,7 +1602,7 @@ class Uygulama(Entity):
         rp = math.radians(self.yuzey_pitch)
         ofset = Vec3(math.sin(ry) * math.cos(rp), math.sin(rp), -math.cos(ry) * math.cos(rp)) * self.yuzey_dist
         camera.position = odak + Vec3(0, 1.8, 0) + ofset
-        camera.look_at(odak + Vec3(0, 1.5, 0))
+        self.kamera_bak(odak + Vec3(0, 1.5, 0), Vec3(0, 1, 0))     # yüzeyde ufuk her zaman düz
 
     def yuzey_kamera_hazirla(self):
         """Yüzeye inince kamera uçarak gelmez; anında karakterin tam arkasına yerleşir."""
@@ -1543,9 +1676,14 @@ class Uygulama(Entity):
         elif abs(self.sl_aci.deger - g.aci) > .5:
             self.sl_aci.ata(g.aci)
 
-    def donme_aktif_mi(self):
-        elle = (Kaydirici.aktif is self.sl_aci) or (self.surukle_mod == "gezegen" and self.surukle_gecti)
-        return bool(self.calisiyor and self.donme_acik and not elle)
+    def donme_aktif_mi(self, g=None):
+        if not (self.calisiyor and self.donme_acik):
+            return False
+        if g is not None and g is self.elle_cevrilen:
+            return False                     # elle tutulan gezegen kendi kendine dönmez
+        if g is not None and g is self.secili and Kaydirici.aktif is self.sl_aci:
+            return False                     # saat kaydırıcısı tutulurken
+        return True
 
     def kamera(self, dt):
         if self.gecis_aktif:
@@ -1561,7 +1699,12 @@ class Uygulama(Entity):
             inis_noktasi = hedef_pos + yon * (self.hedef_yuzey_gezegen.r * 1.05)
 
             camera.position = lerp(self.gecis_bas_pos, inis_noktasi, ease)
-            camera.look_at(hedef_pos)
+            # eğik/ters duran kamera inerken en kısa dönüşle yavaşça dikleşir; iniş bitince ufuk düzdür
+            f_in = _norm(Vec3(*hedef_pos) - camera.position)
+            e_up = min(1.0, p / 0.8)
+            e_up = e_up * e_up * (3 - 2 * e_up)
+            up_in, self.gecis_faz = _yukari_karisim(f_in, self.gecis_bas_up, Vec3(0, 1, 0), e_up, self.gecis_faz)
+            self.kamera_bak(Vec3(*hedef_pos), up_in)
 
             atm_c = hx(self.hedef_yuzey_gezegen.v["renk"], max(0.0, (p - 0.55) / 0.45), 0.7)
             self.gecis_perde.color = atm_c
@@ -1602,6 +1745,11 @@ class Uygulama(Entity):
             return
 
         # ---------------- yörünge kamerası ----------------
+        if self.gecis_perde.enabled:                 # yüzeyden dönüşte siyah perde açılır
+            yeni_a = max(0.0, self.gecis_perde.color.a - dt * 2.0)
+            self.gecis_perde.color = Color(0, 0, 0, yeni_a)
+            if yeni_a <= 0.01:
+                self.gecis_perde.enabled = False
         self.kamera_girdi(dt)
 
         # Odak noktası: seçili gezegeni BİREBİR takip eder (gecikme/titreme yok).
@@ -1710,10 +1858,9 @@ class Uygulama(Entity):
             self.T += dt * 30 * HIZLAR[self.hiz]
 
         self.donus_guncelle()
-        donsun = self.donme_aktif_mi()
         donme_dt = dt * self.sl_donme.deger
         for g in self.gezegenler:
-            g.guncelle(self.T, donme_dt, donsun)
+            g.guncelle(self.T, donme_dt, self.donme_aktif_mi(g))
 
         self.kamera(dt)
 
