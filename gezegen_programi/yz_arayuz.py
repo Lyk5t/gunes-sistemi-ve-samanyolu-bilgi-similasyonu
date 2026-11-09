@@ -93,7 +93,9 @@ class YapayZekaPaneli(Entity):
         Entity(parent=p, model="quad", color=PANEL, scale=(.80, .86), position=(0, 0, 1), collider="box")
         Entity(parent=p, model="quad", color=CAMGOBEGI, scale=(.80, .008), position=(0, .43, .5))
         Yazi(parent=p, text="YAPAY ZEKÂ UZAY ASİSTANI", position=(-.37, .415), scale=1.1, color=CAMGOBEGI)
-        self.mod_yazi = Yazi(parent=p, text=" ", position=(.04, .408), scale=.7, color=SOLUK)
+        self.anahtar_modu = False             # True: bir sonraki Gönder, API anahtarını kaydeder
+        self.online_btn = Dugme(parent=p, text="Online AI: KAPALI", position=(.16, .398), scale=(.24, .032),
+                                color=Color(.35, .35, .45, 1), on_click=self.online_degistir)
         Dugme(parent=p, text="X", position=(.37, .398), scale=(.04, .032), color=Color(.7, .2, .25, 1),
               on_click=self.kapat)
 
@@ -144,8 +146,52 @@ class YapayZekaPaneli(Entity):
         return bool(self.panel.enabled and he is not None and he.has_ancestor(self.panel))
 
     def mod_guncelle(self):
-        self.mod_yazi.text = ("Mod: Claude bağlı (çevrimiçi)" if yz.claude_hazir()
-                              else "Mod: çevrimdışı (fizik + kural tabanlı)")
+        acik = yz.cevrimici_acik()
+        self.online_btn.text = "Online AI: AÇIK" if acik else "Online AI: KAPALI"
+        self.online_btn.color = Color(.15, .62, .55, 1) if acik else Color(.35, .35, .45, 1)
+
+    def sistem_mesaji(self, metin):
+        self.sohbet.append(("SİSTEM", metin))
+        self.sohbet = self.sohbet[-12:]
+        if self.sekme == 0:
+            self.goster(self.sohbet_metni(), alta=True)
+
+    def online_degistir(self):
+        """Online (Claude) modunu açar/kapatır. Anahtar yoksa önce anahtar ister."""
+        if yz.cevrimici_acik():
+            yz.cevrimici_ayarla(False)
+            self.sistem_mesaji("Online mod KAPALI. Yanıtlar çevrimdışı (fizik + kural tabanlı) üretilecek.")
+        elif yz.claude_hazir():
+            yz.cevrimici_ayarla(True)
+            self.anahtar_modu = False
+            self.sistem_mesaji("Online mod AÇIK. Asistan ve gezegen oluşturucu Claude ile çalışacak; "
+                               "internet yoksa ya da hata olursa çevrimdışı moda döner.")
+        else:
+            self.anahtar_modu = True
+            self.sistem_mesaji("Online mod için Claude API anahtarı gerekli. Anahtarı (sk-ant-... ile başlar) alttaki "
+                               "kutuya yapıştırıp Gönder'e bas. Anahtar yalnızca bu bilgisayarda, program klasöründeki "
+                               "anthropic_anahtar.txt dosyasında saklanır.")
+        self.mod_guncelle()
+        self.sekme_sec(0)
+
+    def anahtar_al(self, metin):
+        k = metin.strip()
+        if not (k.startswith("sk-") and len(k) > 20):
+            self.sistem_mesaji("Bu bir API anahtarına benzemiyor (sk- ile başlamalı). Tekrar dene ya da başka bir yere "
+                               "tıklayıp Online AI düğmesine basarak vazgeç.")
+            return
+        yz.anahtar_kaydet(k)
+        yz.cevrimici_ayarla(True)
+        self.anahtar_modu = False
+        self.mod_guncelle()
+        self.sistem_mesaji("Anahtar kaydedildi, online mod AÇIK.")
+        self.sekme_sec(0)
+
+    def anahtar_sil(self):
+        yz.anahtar_sil()
+        self.anahtar_modu = False
+        self.mod_guncelle()
+        self.sistem_mesaji("Kayıtlı API anahtarı silindi, online mod KAPALI.")
 
     # ------------------------------------------------------------- metin alanı
     def goster(self, metin, alta=False):
@@ -203,11 +249,14 @@ class YapayZekaPaneli(Entity):
             2: " ", 3: " ",
             4: "Komut yaz: Mars'a 10 km çapında asteroit çarp / güneş patlaması X10",
         }[i]
+        if i == 0 and self.anahtar_modu:
+            self.ipucu.text = "API anahtarını yapıştır (sk-ant-...) ve Gönder'e bas"
         if i == 0:
-            butonlar = [("Yaşam mümkün mü?", lambda: self.hizli_sor("Burada yaşam mümkün mü?")),
-                        ("İnsan yaşar mı?", lambda: self.hizli_sor("Bu gezegende insan yaşayabilir mi?")),
-                        ("Halkalar neden?", lambda: self.hizli_sor("Satürn'ün halkaları neden var?")),
-                        ("Temizle", self.sohbet_temizle)]
+            butonlar = [("Yaşam?", lambda: self.hizli_sor("Burada yaşam mümkün mü?")),
+                        ("İnsan?", lambda: self.hizli_sor("Bu gezegende insan yaşayabilir mi?")),
+                        ("Halkalar?", lambda: self.hizli_sor("Satürn'ün halkaları neden var?")),
+                        ("Temizle", self.sohbet_temizle),
+                        ("Anahtarı Sil", self.anahtar_sil)]
         elif i == 1:
             butonlar = [("Örnek 1", lambda: self.giris_ata(ORNEK_GEZEGENLER[0])),
                         ("Örnek 2", lambda: self.giris_ata(ORNEK_GEZEGENLER[1])),
@@ -262,6 +311,9 @@ class YapayZekaPaneli(Entity):
         if not metin or self.sekme not in (0, 1, 4):
             return
         self.giris_ata("")
+        if self.sekme == 0 and self.anahtar_modu:
+            self.anahtar_al(metin)                 # anahtar sohbete yazılmaz
+            return
         if self.sekme == 0:
             self.soru_sor(metin)
         elif self.sekme == 1:
@@ -287,8 +339,8 @@ class YapayZekaPaneli(Entity):
     def soru_sor(self, soru):
         v = self.secili_v()
         self.sohbet.append(("SEN", soru))
-        if yz.claude_hazir():
-            self.sohbet.append(("ASİSTAN", "düşünüyor…"))
+        if yz.cevrimici_acik():
+            self.sohbet.append(("ASİSTAN [online]", "düşünüyor…"))
             self.bekliyor = True
             yz.claude_sor_baslat(self.kuyruk, soru, v, list(self.gecmis))
             self.gecmis.append(("user", soru))
@@ -303,25 +355,46 @@ class YapayZekaPaneli(Entity):
 
     def kuyruk_isle(self):
         while not self.kuyruk.empty():
-            durum, metin = self.kuyruk.get()
+            etiket, durum, metin = self.kuyruk.get()
+            if etiket == "uret":
+                ai = yz.ai_json_coz(metin) if durum == "ok" else None
+                if ai:
+                    not_ = ""
+                elif durum == "ok":
+                    not_ = "Claude'un yanıtı anlaşılamadı; kural tabanlı üretim kullanıldı.\n\n"
+                else:
+                    not_ = f"Claude'a ulaşılamadı ({metin[:80]}); kural tabanlı üretim kullanıldı.\n\n"
+                self.uret_son(getattr(self, "_uret_metin", ""), ai, not_)
+                continue
             self.bekliyor = False
             if durum == "ok" and metin:
-                cevap = metin
+                kim, cevap = "ASİSTAN [online]", metin
             else:
                 soru, v = getattr(self, "_bekleyen_soru", ("", None))
-                cevap = yz.cevapla(soru, v, self.tumu()) + "\n(Claude'a ulaşılamadı, çevrimdışı yanıt verildi.)"
+                kim = "ASİSTAN [çevrimdışı]"
+                cevap = (yz.cevapla(soru, v, self.tumu())
+                         + f"\n(Claude'a ulaşılamadı: {metin[:80]}. Çevrimdışı yanıt verildi.)")
             if self.sohbet and self.sohbet[-1][1] == "düşünüyor…":
-                self.sohbet[-1] = ("ASİSTAN", cevap)
+                self.sohbet[-1] = (kim, cevap)
             else:
-                self.sohbet.append(("ASİSTAN", cevap))
+                self.sohbet.append((kim, cevap))
             self.gecmis.append(("assistant", cevap))
             if self.sekme == 0:
                 self.goster(self.sohbet_metni(), alta=True)
 
     # ------------------------------------------------------------- 2) gezegen oluşturucu
     def gezegen_olustur(self, metin):
+        if yz.cevrimici_acik():
+            self._uret_metin = metin
+            self.goster("Claude'a soruluyor… (online mod)")
+            yz.claude_uret_baslat(self.kuyruk, metin)
+        else:
+            self.uret_son(metin, None, "")
+
+    def uret_son(self, metin, ai, not_):
         adlar = [g.v["ad"] for g in self.u.gezegenler]
-        v, rapor = yz.gezegen_uret(metin, adlar, self.u.dmax + 2.5)
+        v, rapor = yz.gezegen_uret(metin, adlar, self.u.dmax + 2.5, ai=ai)
+        rapor = not_ + rapor
         self.son_gezegen_metni = rapor
         self.goster("Gezegen oluşturuluyor… (doku üretimi birkaç saniye sürebilir)\n\n" + rapor)
         invoke(self._gezegen_ekle, v, rapor, delay=.2)

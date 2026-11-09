@@ -387,31 +387,95 @@ def cevapla(soru, v, tumu=()):
             "Daha ayrıntılı sormak için 'yardım' yaz.")
 
 
-# ---------------------------------------------------------------- Claude (isteğe bağlı)
+# ---------------------------------------------------------------- Online mod (Claude, isteğe bağlı)
 MODEL = "claude-sonnet-5-5"          # model adını gerekirse değiştirin
 API_URL = "https://api.anthropic.com/v1/messages"
+KLASOR = os.path.dirname(os.path.abspath(__file__))
+ANAHTAR_YOLU = os.path.join(KLASOR, "anthropic_anahtar.txt")
+AYAR_YOLU = os.path.join(KLASOR, "yz_ayar.json")
+_BELLEK = {"anahtar": "", "cevrimici": False}      # dosya yazılamazsa oturum boyunca burada tutulur
+
 SISTEM = ("Sen 'Samanyolu 3B Gezegen Laboratuvarı' simülasyonunun uzay asistanısın. Türkçe, kısa ve net yanıt ver "
           "(en fazla 120 kelime). Önce sana verilen gezegen verilerini kullan; veride olmayan bir şeyi bilimsel olarak "
           "doğrulanmış bilgiyle tamamla ve emin olmadığında bunu açıkça söyle. Bilgi uydurma.")
+SISTEM_URET = ("Kullanıcının tarif ettiği gezegeni JSON olarak özetle. YALNIZCA tek bir JSON nesnesi döndür, başka metin yazma. "
+               "Alanlar: ad (string, kullanıcı vermediyse boş), tur (\"gaz\"|\"okyanus\"|\"buz\"|\"lav\"|\"col\"|\"kaya\"), "
+               "cap_km (1000-150000), uydu (0-8), atmosfer_yok (bool), gazlar (en çok 5 öğe, örn. [[\"Azot\",78],[\"Oksijen\",21]]; "
+               "gaz adları yalnızca: Azot, Oksijen, Argon, Hidrojen, Helyum, Metan, Karbondioksit, Sodyum, Neon, Su buharı, Diğer; "
+               "yüzdeler toplamı 100), basinc_bar, sicak_c (ortalama sıcaklık), ruzgar_kmh, renk (\"#rrggbb\"), halka (bool). "
+               "Bilimsel olarak tutarlı değerler seç; kullanıcının belirtmediği alanlar için makul varsayım yap.")
+GAZ_ADLARI = ("Azot", "Oksijen", "Argon", "Hidrojen", "Helyum", "Metan", "Karbondioksit", "Sodyum", "Neon", "Su buharı", "Diğer")
+
+
+def ayar_oku():
+    try:
+        with open(AYAR_YOLU, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {"cevrimici": _BELLEK["cevrimici"]}
 
 
 def anahtar():
     k = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if k:
         return k
+    if _BELLEK["anahtar"]:
+        return _BELLEK["anahtar"]
     try:
-        yol = os.path.join(os.path.dirname(os.path.abspath(__file__)), "anthropic_anahtar.txt")
-        with open(yol, encoding="utf-8") as f:
+        with open(ANAHTAR_YOLU, encoding="utf-8") as f:
             return f.read().strip()
     except OSError:
         return ""
 
 
 def claude_hazir():
+    """API anahtarı var mı?"""
     return bool(anahtar())
 
 
-def _claude_cagri(soru, v, gecmis):
+def cevrimici_acik():
+    """Online mod kullanıcı tarafından açık mı VE anahtar var mı?"""
+    return bool(ayar_oku().get("cevrimici")) and claude_hazir()
+
+
+def cevrimici_ayarla(acik):
+    _BELLEK["cevrimici"] = bool(acik)
+    try:
+        with open(AYAR_YOLU, "w", encoding="utf-8") as f:
+            json.dump({"cevrimici": bool(acik)}, f)
+    except OSError:
+        pass
+
+
+def anahtar_kaydet(k):
+    k = k.strip()
+    _BELLEK["anahtar"] = k
+    try:
+        with open(ANAHTAR_YOLU, "w", encoding="utf-8") as f:
+            f.write(k)
+    except OSError:
+        pass
+
+
+def anahtar_sil():
+    _BELLEK["anahtar"] = ""
+    try:
+        os.remove(ANAHTAR_YOLU)
+    except OSError:
+        pass
+    cevrimici_ayarla(False)
+
+
+def _claude_metin(sistem, mesajlar, max_tokens=600):
+    govde = json.dumps({"model": MODEL, "max_tokens": max_tokens, "system": sistem, "messages": mesajlar}).encode("utf-8")
+    istek = urllib.request.Request(API_URL, data=govde, method="POST", headers={
+        "x-api-key": anahtar(), "anthropic-version": "2023-06-01", "content-type": "application/json"})
+    with urllib.request.urlopen(istek, timeout=40) as r:
+        d = json.loads(r.read().decode("utf-8"))
+    return "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text").strip()
+
+
+def _sor_mesajlari(soru, v, gecmis):
     baglam = analiz_raporu(v) if v else "Seçili gezegen yok."
     msgs = []
     for rol, metin in gecmis[-6:]:
@@ -423,22 +487,68 @@ def _claude_cagri(soru, v, gecmis):
     if msgs and msgs[-1]["role"] == "user":
         msgs.pop()
     msgs.append({"role": "user", "content": f"[Simülasyon verileri]\n{baglam}\n\n[Soru]\n{soru}"})
-    govde = json.dumps({"model": MODEL, "max_tokens": 600, "system": SISTEM, "messages": msgs}).encode("utf-8")
-    istek = urllib.request.Request(API_URL, data=govde, method="POST", headers={
-        "x-api-key": anahtar(), "anthropic-version": "2023-06-01", "content-type": "application/json"})
-    with urllib.request.urlopen(istek, timeout=40) as r:
-        d = json.loads(r.read().decode("utf-8"))
-    return "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text").strip()
+    return msgs
+
+
+def _arka_planda(kuyruk, etiket, is_):
+    def calis():
+        try:
+            kuyruk.put((etiket, "ok", is_()))
+        except Exception as hata:
+            kuyruk.put((etiket, "hata", str(hata)))
+    threading.Thread(target=calis, daemon=True).start()
 
 
 def claude_sor_baslat(kuyruk, soru, v, gecmis):
-    """Arka plan iş parçacığında sorar; sonuç kuyruğa ('ok', metin) ya da ('hata', mesaj) olarak düşer."""
-    def is_():
+    """Asistan sorusu. Sonuç kuyruğa ('sor', 'ok'|'hata', metin) olarak düşer."""
+    _arka_planda(kuyruk, "sor", lambda: _claude_metin(SISTEM, _sor_mesajlari(soru, v, gecmis)))
+
+
+def claude_uret_baslat(kuyruk, metin):
+    """Gezegen tarifini JSON'a çevirtir. Sonuç kuyruğa ('uret', 'ok'|'hata', metin) olarak düşer."""
+    _arka_planda(kuyruk, "uret", lambda: _claude_metin(SISTEM_URET, [{"role": "user", "content": metin}], 500))
+
+
+def ai_json_coz(metin):
+    """Claude'un JSON yanıtını doğrulayıp temiz bir sözlüğe çevirir; olmazsa None."""
+    try:
+        i, j = metin.index("{"), metin.rindex("}")
+        d = json.loads(metin[i:j + 1])
+    except ValueError:
+        return None
+    if not isinstance(d, dict):
+        return None
+    ai = {}
+    if isinstance(d.get("ad"), str) and d["ad"].strip():
+        ai["ad"] = d["ad"].strip()[:18]
+    if d.get("tur") in ("gaz", "okyanus", "buz", "lav", "col", "kaya"):
+        ai["tur"] = d["tur"]
+    for k, lo, hi in (("cap_km", 1000, 150000), ("basinc_bar", 0, 300), ("sicak_c", -250, 600), ("ruzgar_kmh", 0, 2000)):
         try:
-            kuyruk.put(("ok", _claude_cagri(soru, v, gecmis)))
-        except Exception as hata:
-            kuyruk.put(("hata", str(hata)))
-    threading.Thread(target=is_, daemon=True).start()
+            ai[k] = max(lo, min(hi, float(d[k])))
+        except (KeyError, TypeError, ValueError):
+            pass
+    try:
+        ai["uydu"] = max(0, min(8, int(d["uydu"])))
+    except (KeyError, TypeError, ValueError):
+        pass
+    if isinstance(d.get("atmosfer_yok"), bool):
+        ai["atmosfer_yok"] = d["atmosfer_yok"]
+    if isinstance(d.get("halka"), bool):
+        ai["halka"] = d["halka"]
+    if isinstance(d.get("renk"), str) and re.fullmatch(r"#[0-9a-fA-F]{6}", d["renk"]):
+        ai["renk"] = d["renk"]
+    gz = []
+    for oge in d.get("gazlar") or []:
+        try:
+            ad, yuzde = oge[0], float(oge[1])
+        except (IndexError, TypeError, ValueError):
+            continue
+        if ad in GAZ_ADLARI and yuzde > 0:
+            gz.append((ad, max(1, round(yuzde))))
+    if gz:
+        ai["gazlar"] = gz[:5]
+    return ai or None
 
 
 # ---------------------------------------------------------------- gezegen oluşturucu
@@ -491,8 +601,9 @@ def _gaz_karisimi(f, devmi):
     return liste, True, dom
 
 
-def gezegen_uret(metin, mevcut_adlar=(), au=60.0):
-    """Doğal dil açıklamasından gezegen sözlüğü ve bir rapor metni üretir."""
+def gezegen_uret(metin, mevcut_adlar=(), au=60.0, ai=None):
+    """Doğal dil açıklamasından gezegen sözlüğü ve bir rapor metni üretir.
+    ai: online modda Claude'un çıkardığı (ai_json_coz) değerler; verilirse kural tabanlı değerlerin üzerine yazar."""
     f = sade(metin)
     varsayim = []
 
@@ -609,6 +720,36 @@ def gezegen_uret(metin, mevcut_adlar=(), au=60.0):
             sicak = 28.0
             varsayim[-1:] = [f"Metan güçlü bir sera gazı olduğundan sıcaklığı {tr(sicak, 0)} °C aldım."]
 
+    if ai:
+        varsayim[:] = ["Özellikler online yapay zekâ (Claude) tarafından belirlendi; kural tabanlı varsayımlar devre dışı."]
+        if ai.get("tur"):
+            tur = ai["tur"]
+            devmi = tur == "gaz"
+        if ai.get("cap_km"):
+            cap = ai["cap_km"]
+        if ai.get("uydu") is not None:
+            uydu = ai["uydu"]
+        if ai.get("atmosfer_yok"):
+            atmsiz, gazlar, basinc, dom = True, [("Diğer", 100)], 0.0, None
+        else:
+            if ai.get("gazlar"):
+                gazlar = list(ai["gazlar"])
+                atmsiz = False
+                dom = max(gazlar, key=lambda g_: g_[1])[0]
+            if ai.get("basinc_bar") is not None:
+                basinc = ai["basinc_bar"]
+                atmsiz = atmsiz and basinc <= 0
+        if atmsiz:
+            basinc = 0.0
+        atm_k = 0.0 if atmsiz else (0.35 if basinc < 0.3 else 0.55)
+        if ai.get("sicak_c") is not None:
+            sicak = ai["sicak_c"]
+        if ai.get("ad") and not re.search(r"(?:adi|ismi|adli|isimli|adinda|isminde)", f):
+            ad = ai["ad"]
+            while ad in mevcut_adlar:
+                ad += " II"
+            ad = ad[:18]
+
     # ---- yoğunluk, çekim
     rho = {"gaz": 1.3, "okyanus": 4.8, "buz": 2.6, "lav": 5.3, "col": 4.2, "kaya": 5.0}[tur]
     r_m = cap * 500.0
@@ -634,6 +775,14 @@ def gezegen_uret(metin, mevcut_adlar=(), au=60.0):
         ruzgar = 40 if tur == "okyanus" else 60
     if re.search(r"firtina|ruzgarli", f):
         ruzgar += 120
+
+    if ai:
+        if ai.get("renk"):
+            renk = ai["renk"]
+        if ai.get("halka") is not None:
+            halka = renk if ai["halka"] else None
+        if ai.get("ruzgar_kmh") is not None:
+            ruzgar = 0 if atmsiz else ai["ruzgar_kmh"]
 
     # ---- uydular
     rnd = random.Random(sum(map(ord, ad)))
