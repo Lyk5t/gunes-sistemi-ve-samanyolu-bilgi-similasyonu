@@ -26,6 +26,7 @@ import ses
 from acilis import Acilis
 from arayuz import YAZI_OLCEK, Dugme, Kaydirici, Yazi, dongu_dugme
 from sahne import CANLI, Gezegen3B, hx, sahne_kur
+from yz_arayuz import YapayZekaPaneli
 
 
 def lerp(a, b, t):
@@ -233,10 +234,10 @@ class Uygulama(Entity):
         # Sağ Tık Menüsü
         self.sag_tik_gezegen = None
         self.sag_tik_menu = Entity(parent=camera.ui, enabled=False, z=-3)
-        Entity(parent=self.sag_tik_menu, model="quad", color=PANEL, scale=(.24, .13), position=(0, 0, 1))
-        Entity(parent=self.sag_tik_menu, model="quad", color=Color(1, .37, .63, 1), scale=(.24, .006), position=(0, .062, .5))
-        self.st_baslik = Yazi(parent=self.sag_tik_menu, text="Gezegen", position=(-.10, .035), scale=0.95, color=Color(1, .83, .42, 1))
-        Dugme(parent=self.sag_tik_menu, text="Gezegende Gez", position=(0, -.02), scale=(.20, .04),
+        Entity(parent=self.sag_tik_menu, model="quad", color=PANEL, scale=(.40, .42), position=(0, 0, 1), collider="box")
+        Entity(parent=self.sag_tik_menu, model="quad", color=Color(1, .37, .63, 1), scale=(.40, .006), position=(0, .207, .5))
+        self.st_baslik = Yazi(parent=self.sag_tik_menu, text="Gezegen", position=(-.18, .190), scale=0.95, color=Color(1, .83, .42, 1))
+        Dugme(parent=self.sag_tik_menu, text="Gezegende Gez", position=(0, .125), scale=(.36, .04),
               color=Color(1, .37, .63, 1), on_click=self.yuzey_modunu_baslat)
 
         # Dünya Uyarı Penceresi
@@ -302,6 +303,7 @@ class Uygulama(Entity):
         self.hakkinda_kur()
         self.alt_cubuk_kur()
         self.donus_kur()
+        self.yz = YapayZekaPaneli(self)      # yapay zekâ paneli (yz_arayuz.py)
 
         self.sec(None)
 
@@ -595,7 +597,7 @@ class Uygulama(Entity):
         bas_w, bosluk = .15, .008
         sol_x = -window.aspect_ratio / 2 + 0.02
         sag_x = window.aspect_ratio / 2
-        kullanilabilir_genislik = (sag_x - 0.45) - sol_x
+        kullanilabilir_genislik = (sag_x - 0.60) - sol_x
         w = min(.12, (kullanilabilir_genislik - bas_w - bosluk * (n + 1)) / max(1, n))
         x = sol_x
 
@@ -633,8 +635,6 @@ class Uygulama(Entity):
             self.odak_gecisi_baslat()
         self.butonlari_yenile()
         self.panel_yenile()
-        if getattr(self, "donus_grup", None) is not None:
-            self.donus_grup.enabled = g is not None
         if g is not None:
             self.canli()
 
@@ -711,6 +711,7 @@ class Uygulama(Entity):
 
     def yuzey_modunu_baslat(self):
         self.sag_tik_menu.enabled = False
+        self.yz.kapat()
         g = self.sag_tik_gezegen
         if not g:
             return
@@ -973,7 +974,7 @@ class Uygulama(Entity):
             atm_renk=renk, atm_k=0.6 if atm_var else 0.0,
             gazlar=[("Oksijen", 21), ("Azot", 78), ("Diğer", 1)] if atm_var else [("Diğer", 100)],
             halka=halka, doku="kaya" if tur in ["Kayalık", "Lav"] else "gaz",
-            bilgi=bilgi_metni, cekimi=cekimi
+            bilgi=bilgi_metni, cekimi=cekimi, kutle=kutle, yogunluk=yogunluk, yas=yas
         )
         g = self.ekle(v, True)
         g.govde.scale = 0.0001
@@ -1041,6 +1042,9 @@ class Uygulama(Entity):
             return
 
         # ---------------- yörünge (uzay) görünümü ----------------
+        if key in ("scroll up", "scroll down") and self.yz.fare_ustunde():
+            self.yz.kaydir(-1 if key == "scroll up" else 1)       # yapay zekâ panelinde tekerlek = metni kaydır
+            return
         if key == "scroll up":
             self.yakinlas(YAKINLASMA)
         elif key == "scroll down":
@@ -1093,7 +1097,9 @@ class Uygulama(Entity):
             self.isik_tarafi(True)
 
         elif key == "escape":
-            if self.dunya_uyari.enabled:
+            if self.yz.acik():
+                self.yz.kapat()
+            elif self.dunya_uyari.enabled:
                 self.dunya_uyari.enabled = False
             elif self.sag_tik_menu.enabled:
                 self.sag_tik_menu.enabled = False
@@ -1184,7 +1190,8 @@ class Uygulama(Entity):
 
     def klavye_serbest(self):
         """Gezegen formu / ayarlar / hakkında penceresi açıkken tuşlar kameraya gitmesin."""
-        return not (self.form.enabled or self.ayar_menu.enabled or self.hak.enabled)
+        yz = getattr(self, "yz", None)
+        return not (self.form.enabled or self.ayar_menu.enabled or self.hak.enabled or (yz and yz.acik()))
 
     def min_mesafe(self):
         return max(0.8, self.secili.r * 1.55) if self.secili else 2.0
@@ -1355,7 +1362,11 @@ class Uygulama(Entity):
         if hedef_g is not None:
             self.sag_tik_gezegen = hedef_g
             self.st_baslik.text = hedef_g.v["ad"]
-            self.sag_tik_menu.position = (mouse.x, mouse.y)
+            ar = window.aspect_ratio
+            self.sag_tik_menu.position = (max(-ar / 2 + .21, min(ar / 2 - .21, mouse.x)),
+                                          max(-.5 + .22, min(.5 - .22, mouse.y)))
+            self.sl_aci.ata(hedef_g.aci)
+            self.btn_donme.text = f"Kendi Ekseninde Dönüş: {'Açık' if self.donme_acik else 'Kapalı'}"
             self.sag_tik_menu.enabled = True
         else:
             self.sag_tik_menu.enabled = False
@@ -1492,52 +1503,46 @@ class Uygulama(Entity):
         """a açısını b'ye (en kısa yoldan) k oranında yaklaştırır."""
         return a + (((b - a + 180) % 360) - 180) * min(1.0, k)
 
-    # ---- gezegen dönüş paneli ----
+    # ---- gezegen dönüşü (sağ tık menüsünde) ----
     def donus_kur(self):
-        sol_x = -window.aspect_ratio / 2 + 0.05
-        ust = -.10
+        m = self.sag_tik_menu
         dugme_renk = Color(.25, .27, .5, 1)
-        self.donus_grup = Entity(parent=self.alt_cubuk_grup, enabled=False)
-        g = self.donus_grup
-        # zemin: tıklamaları yutar (arkadaki sahne kamerası kıpırdamasın)
-        self.donus_zemin = Entity(parent=g, model="quad", color=PANEL, scale=(.40, .34),
-                                  position=(sol_x + .20, ust - .17, .5), collider="box")
-        Yazi(parent=g, text="GEZEGEN DÖNÜŞÜ", position=(sol_x + .015, ust - .012), scale=.8, color=YAZI)
-        self.btn_donus_katla = Dugme(parent=g, text="-", position=(sol_x + .37, ust - .0275),
-                                     scale=(.04, .03), color=dugme_renk, on_click=self.donus_katla)
-        ic = self.donus_ic = Entity(parent=g)
-        self.btn_donme = Dugme(parent=ic, text="Kendi Ekseninde Dönüş: Açık", position=(sol_x + .20, ust - .075),
-                               scale=(.36, .034), color=dugme_renk, on_click=self.donme_ac_kapa)
-        self.sl_donme = Kaydirici(ic, sol_x + .025, ust - .135, .35, 0.0, 10.0, 1.0, .25, "Dönüş Hızı", "x", 2)
-        self.sl_aci = Kaydirici(ic, sol_x + .025, ust - .205, .35, 0.0, 360.0, 0.0, 1.0,
-                                "Dönüş Açısı (gün-gece)", "°", 0)
-        Dugme(parent=ic, text="Gündüz Tarafına Bak", position=(sol_x + .105, ust - .28), scale=(.18, .036),
-              color=Color(1, .55, .25, 1), on_click=lambda: self.isik_tarafi(True))
-        Dugme(parent=ic, text="Gece Tarafına Bak", position=(sol_x + .295, ust - .28), scale=(.18, .036),
-              color=dugme_renk, on_click=lambda: self.isik_tarafi(False))
+        Yazi(parent=m, text="GEZEGEN DÖNÜŞÜ", position=(-.18, .088), scale=.8, color=SOLUK)
+        self.btn_donme = Dugme(parent=m, text="Kendi Ekseninde Dönüş: Açık", position=(0, .035), scale=(.36, .034),
+                               color=dugme_renk, on_click=self.donme_ac_kapa)
+        self.sl_donme = Kaydirici(m, -.18, -.03, .35, 0.0, 10.0, 1.0, .25, "Dönüş Hızı", "x", 2)
+        self.sl_aci = Kaydirici(m, -.18, -.10, .35, 0.0, 360.0, 0.0, 1.0, "Dönüş Açısı (gün-gece)", "°", 0)
+        Dugme(parent=m, text="Gündüz Tarafına Bak", position=(-.092, -.165), scale=(.176, .036),
+              color=Color(1, .55, .25, 1), on_click=lambda: self.donus_bak(True))
+        Dugme(parent=m, text="Gece Tarafına Bak", position=(.092, -.165), scale=(.176, .036),
+              color=dugme_renk, on_click=lambda: self.donus_bak(False))
 
-    def donus_katla(self):
-        acik = not self.donus_ic.enabled
-        self.donus_ic.enabled = acik
-        self.btn_donus_katla.text = "-" if acik else "+"
-        self.donus_zemin.scale_y = .34 if acik else .055
-        self.donus_zemin.y = (-.10 - .17) if acik else (-.10 - .0275)
+    def donus_bak(self, gunduz):
+        g = self.sag_tik_gezegen
+        if g is None:
+            return
+        if g is not self.secili:
+            self.sec(g)
+        self.isik_tarafi(gunduz)
+        self.sag_tik_menu.enabled = False
 
     def donme_ac_kapa(self):
         self.donme_acik = not self.donme_acik
         self.btn_donme.text = f"Kendi Ekseninde Dönüş: {'Açık' if self.donme_acik else 'Kapalı'}"
 
     def donus_gorunur_mu(self):
-        return bool(self.donus_grup.enabled and self.alt_cubuk_grup.enabled and self.secili is not None
+        return bool(self.sag_tik_menu.enabled and self.sag_tik_gezegen is not None
                     and not self.yuzey_modu and not self.gecis_aktif)
 
     def donus_guncelle(self):
-        """Kaydırıcıları etkinleştirir ve 'Dönüş Açısı' kaydırıcısını gezegenle eşler."""
-        gorunur = self.donus_gorunur_mu() and self.donus_ic.enabled
+        """Menüdeki kaydırıcıları etkinleştirir ve 'Dönüş Açısı' kaydırıcısını gezegenle eşler."""
+        gorunur = self.donus_gorunur_mu()
         Kaydirici.gorunur = bool(self.form.enabled or self.ayar_menu.enabled or gorunur)
         if not gorunur:
+            if Kaydirici.aktif in (self.sl_donme, self.sl_aci):
+                Kaydirici.aktif = None
             return
-        g = self.secili
+        g = self.sag_tik_gezegen
         if Kaydirici.aktif is self.sl_aci:
             g.aci = self.sl_aci.deger                       # elle saat ayarı
         elif abs(self.sl_aci.deger - g.aci) > .5:

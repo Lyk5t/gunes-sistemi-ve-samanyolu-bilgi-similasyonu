@@ -58,7 +58,7 @@ class Kaydirici(Entity):
             if Kaydirici.aktif is None and self.vurus.hovered:
                 Kaydirici.aktif = self
             if Kaydirici.aktif is self:
-                t = max(0, min(1, (mouse.x - self.ax) / self.w))
+                t = max(0, min(1, (mouse.x - self.parent.x - self.ax) / self.w))
                 v = self.mn + t * (self.mx - self.mn)
                 self.ata(round(v / self.adim) * self.adim)
         elif Kaydirici.aktif is self:
