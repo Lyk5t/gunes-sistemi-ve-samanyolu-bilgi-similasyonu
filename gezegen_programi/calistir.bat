@@ -1,10 +1,11 @@
+@echo off
 REM Programın Adı: Samanyolu Gezegenleri Simülasyonu
 REM Windows Batch File
 REM Geliştirici: Oğuzhan Öcal
 REM Tarih: 09.11.2026
 REM Sürüm: 1.0
 REM Açıklama: 3 boyutlu gezegen simülasyonu
-@echo off
+
 chcp 65001 >nul
 setlocal
 title Samanyolu ve Gunes Sistemi Simulasyonu
