@@ -20,7 +20,7 @@ Kontroller: Başlat/Duraklat, 0.25× – 64× hız ayarı, gezegen seçme düğm
 Hakkında ekranı: Okul, proje lideri ve ekip bilgileri hakkinda.py dosyasından okunur.
 Kurulum ve çalıştırma
 
-Python 3.10 veya daha yeni bir sürüm gerekir.
+Python 3.10 veya daha yeni bir sürüm gerekir. Son sürüm Python çalışmamaktadır
 
 bash
 pip install -r requirements.txt
