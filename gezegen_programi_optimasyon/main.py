@@ -29,6 +29,7 @@ import bilgiler
 import dokular
 import gezegenler
 import ses
+from muzik import ArkaPlanMuzigi
 from acilis import Acilis
 from arayuz import YAZI_OLCEK, Dugme, Kaydirici, Yazi, dongu_dugme
 from sahne import CANLI, Gezegen3B, hx, sahne_kur
@@ -159,6 +160,8 @@ class Uygulama(Entity):
         sahne_kur()
 
         # ---------- MODEL ----------
+        self.aktif_sistem = "Güneş Sistemi"
+        self.sistem_aciklama = ""
         self.gezegenler, self.etiketler = [], {}
         for v in gezegenler.yukle():
             self.ekle(v)
@@ -168,6 +171,9 @@ class Uygulama(Entity):
         self.secili = None
         self.T = 0.0
         self.calisiyor = True
+        # Suno ile hazirlanan arka plan muzigi: program boyunca tek ses nesnesi kullanilir.
+        self.arka_plan_muzigi = ArkaPlanMuzigi(ASSETS)
+        self.arka_plan_muzigi.baslat()
         self.hiz = 1
         self.canli_t = 0.0
         self.dyn, self.btn = [], []
@@ -315,6 +321,99 @@ class Uygulama(Entity):
 
         self.sec(None)
 
+    def sistem_menusu_goster(self):
+        """Açılış animasyonundan sonra sistem seçim ekranını gösterir."""
+        self.enabled = False
+        if getattr(self, "sistem_menu", None):
+            destroy(self.sistem_menu)
+        menu = self.sistem_menu = Entity(parent=camera.ui, z=-4)
+        Entity(parent=menu, model="quad", scale=(4, 2), color=Color(.008, .012, .035, .96), z=1)
+        Entity(parent=menu, model="quad", scale=(1.02, .66), color=Color(.035, .055, .12, .98), z=.8)
+        Entity(parent=menu, model="quad", scale=(1.02, .008), position=(0, .326, .5),
+               color=Color(1, .76, .32, 1))
+
+        # Üniversite amblemi ve program bilgisi: menü başlığının üstünde yer alır.
+        logo_yolu = os.path.join(ASSETS, "bozok_logo.png")
+        if os.path.isfile(logo_yolu):
+            try:
+                logo_doku = Texture(Image.open(logo_yolu).convert("RGBA"))
+                Entity(parent=menu, model="quad", texture=logo_doku,
+                       scale=(.105, .098), position=(-.405, .245, -.1))
+            except Exception:
+                pass
+        Yazi(parent=menu, text="Boğazlıyan Meslek Yüksek Okulu",
+             origin=(-.5, 0), position=(-.32, .265), scale=.92,
+             color=Color(1, .9, .68, 1))
+        Yazi(parent=menu, text="Bilgisayar Programlama (Uzaktan Eğitim)",
+             origin=(-.5, 0), position=(-.32, .218), scale=.78, color=YAZI)
+
+        Yazi(parent=menu, text="SAMANYOLU 3B GEZEGEN LABORATUVARI",
+             origin=(0, 0), position=(0, .135), scale=1.25, color=Color(1, .83, .48, 1))
+        Yazi(parent=menu, text="Keşfetmek istediğiniz yıldız sistemini seçin",
+             origin=(0, 0), position=(0, .075), scale=.95, color=YAZI)
+
+        secenekler = [
+            ("GÜNEŞ SİSTEMİ", "Güneş ve sekiz gezegen", "Güneş Sistemi", Color(1, .72, .25, 1)),
+            ("ALPHA CENTAURI", "Proxima Centauri b ve d", "Alpha Centauri", Color(.55, .78, 1, 1)),
+            ("TRAPPIST-1", "Yedi Dünya boyutunda ötegezegen", "TRAPPIST-1", Color(.45, .9, .78, 1)),
+            ("KEPLER-90", "Sekiz gezegenli uzak sistem", "Kepler-90", Color(.83, .65, 1, 1)),
+        ]
+        for i, (baslik, alt, anahtar, renk) in enumerate(secenekler):
+            y = -.005 - i * .078
+            Dugme(parent=menu, text=baslik, position=(-.18, y), scale=(.43, .075),
+                  color=renk, on_click=lambda ad=anahtar: self.sistem_sec(ad))
+            Yazi(parent=menu, text=alt, position=(.075, y - .012), scale=.78, color=SOLUK)
+        Yazi(parent=menu, text="Not: Ötegezegenlerin ölçekleri görselleştirme amacıyla uyarlanmıştır.",
+             origin=(0, 0), position=(0, -.302), scale=.64, color=Color(.65, .68, .78, 1))
+
+    def sistem_sec(self, sistem_adi):
+        """Seçilen yıldız sisteminin gezegenlerini mevcut simülasyon motoruna yükler."""
+        from sistemler import sistem_verisi
+        if getattr(self, "sistem_menu", None):
+            destroy(self.sistem_menu)
+            self.sistem_menu = None
+
+        if sistem_adi == "Güneş Sistemi":
+            veriler = [(v, False) for v in gezegenler.yukle()]
+            veriler += [(v, True) for v in ozel_yukle()]
+            self.sistem_aciklama = (
+                "Güneş Sistemi; Güneş ve onun çevresinde dolanan sekiz gezegenden oluşur. "
+                "Samanyolu Galaksisi'nin Orion Kolu'nda bulunur."
+            )
+        else:
+            veri_listesi, aciklama = sistem_verisi(sistem_adi)
+            veriler = [(v, False) for v in veri_listesi]
+            self.sistem_aciklama = aciklama
+
+        # Önce eski sistemin 3B nesnelerini ve etiketlerini temizle.
+        for g in list(self.gezegenler):
+            etiket = self.etiketler.pop(g, None)
+            if etiket:
+                destroy(etiket)
+            g.sil()
+        self.gezegenler = []
+        self.etiketler = {}
+        self.secili = None
+        self.dunya_ref = None
+
+        for v, ozel in veriler:
+            self.ekle(v, ozel)
+        self.dunya_ref = next((g for g in self.gezegenler if g.v["ad"] == "Dünya"),
+                              self.gezegenler[0] if self.gezegenler else None)
+        self.aktif_sistem = sistem_adi
+        self.T = 0.0
+        self.serbest_merkez = Vec3(0, 0, 0)
+        self.pan_ofset = Vec3(0, 0, 0)
+        self.hedef = Vec3(0, 0, 0)
+        self.dist = self.dist_h = max(40, self.dmax * 1.7)
+        self.kam_f, self.kam_u = yon_yaw_pitch(25, 35)
+        self.butonlari_yenile()
+        self.panel_yenile()
+        self.enabled = True
+        self.calisiyor = True
+        if hasattr(self, "btn_oynat"):
+            self.btn_oynat.text = "Duraklat"
+
     def patlama_sesi_cal(self):
         try:
             from panda3d.core import Filename
@@ -356,6 +455,8 @@ class Uygulama(Entity):
         return g
 
     def kaydet(self):
+        if self.aktif_sistem != "Güneş Sistemi":
+            return
         try:
             with open(DOSYA, "w", encoding="utf-8") as f:
                 json.dump([g.v for g in self.gezegenler if g.ozel], f, ensure_ascii=False)
@@ -428,22 +529,27 @@ class Uygulama(Entity):
     def ayarlar_kur(self):
         self.ust_menu_yazi_olcegi = 1.0
         f = self.ayar_menu = Entity(parent=camera.ui, enabled=False, z=-2)
-        Entity(parent=f, model="quad", color=PANEL, scale=(.46, .55), position=(0, 0, 1))
-        Entity(parent=f, model="quad", color=Color(.4, .8, 1, 1), scale=(.46, .008), position=(0, .271, .5))
-        Yazi(parent=f, text="AYARLAR", position=(-.21, .23), scale=1.2, color=Color(.4, .8, 1, 1))
+        Entity(parent=f, model="quad", color=PANEL, scale=(.50, .68), position=(0, 0, 1))
+        Entity(parent=f, model="quad", color=Color(.4, .8, 1, 1), scale=(.50, .008), position=(0, .336, .5))
+        Yazi(parent=f, text="AYARLAR", position=(-.23, .29), scale=1.2, color=Color(.4, .8, 1, 1))
 
-        self.sl_menu_yazi = Kaydirici(f, -.21, .13, .42, 0.4, 2.5, self.ust_menu_yazi_olcegi, 0.1, "Üst Menü Yazı Boyutu", "x", 1)
-        self.sl_kamera = Kaydirici(f, -.21, .05, .42, 0.1, 5.0, self.kamera_hassasiyet, 0.1, "Kamera Hassasiyeti", "x", 1)
+        self.sl_menu_yazi = Kaydirici(f, -.23, .19, .46, 0.4, 2.5, self.ust_menu_yazi_olcegi, 0.1, "Üst Menü Yazı Boyutu", "x", 1)
+        self.sl_kamera = Kaydirici(f, -.23, .11, .46, 0.1, 5.0, self.kamera_hassasiyet, 0.1, "Kamera Hassasiyeti", "x", 1)
 
-        Yazi(parent=f, text="SİMÜLASYON OLAYLARI", position=(-.21, -.06), scale=0.9, color=Color(1, .5, .2, 1))
-        Dugme(parent=f, text="Göktaşı Yolla", position=(-.12, -.12), scale=(.18, .04),
+        # Arka plan muzigi ayarlari
+        self.sl_muzik = Kaydirici(f, -.23, .025, .29, 0.0, 1.0, 0.35, 0.05, "Müzik Seviyesi", "", 2)
+        self.btn_muzik = Dugme(parent=f, text="Müzik: Açık", position=(.145, .025), scale=(.15, .04),
+                               color=Color(.2, .5, .42, 1), on_click=self.muzik_ac_kapat)
+
+        Yazi(parent=f, text="SİMÜLASYON OLAYLARI", position=(-.23, -.075), scale=0.9, color=Color(1, .5, .2, 1))
+        Dugme(parent=f, text="Göktaşı Yolla", position=(-.12, -.145), scale=(.18, .04),
               color=Color(.6, .3, .2, 1), on_click=self.goktasi_gonder)
-        Dugme(parent=f, text="Kuyruklu Yıldız", position=(.12, -.12), scale=(.18, .04),
+        Dugme(parent=f, text="Kuyruklu Yıldız", position=(.12, -.145), scale=(.18, .04),
               color=Color(.2, .6, .8, 1), on_click=self.kuyruklu_yildiz_gonder)
 
-        Dugme(parent=f, text="Uygula", position=(-.12, -.22), scale=(.18, .04),
+        Dugme(parent=f, text="Uygula", position=(-.12, -.255), scale=(.18, .04),
               color=Color(.3, .6, .8, 1), on_click=self.ayarlar_uygula)
-        Dugme(parent=f, text="İptal", position=(.12, -.22), scale=(.18, .04),
+        Dugme(parent=f, text="İptal", position=(.12, -.255), scale=(.18, .04),
               color=Color(.5, .2, .25, 1), on_click=self.ayarlar_kapat)
 
     def goktasi_gonder(self):
@@ -536,6 +642,13 @@ class Uygulama(Entity):
         Kaydirici.gorunur = False
         Kaydirici.aktif = None
 
+    def muzik_ac_kapat(self):
+        """Arka plan muzigi calmayi veya durdurmayi degistirir."""
+        if not getattr(self, "arka_plan_muzigi", None):
+            return
+        acik = self.arka_plan_muzigi.degistir()
+        self.btn_muzik.text = "Müzik: Açık" if acik else "Müzik: Kapalı"
+
     def ayarlar_ac(self):
         self.form_kapat()
         self.hakkinda_kapat()
@@ -543,6 +656,8 @@ class Uygulama(Entity):
         Kaydirici.gorunur = True
         self.sl_menu_yazi.ata(self.ust_menu_yazi_olcegi)
         self.sl_kamera.ata(self.kamera_hassasiyet)
+        self.sl_muzik.ata(self.arka_plan_muzigi.ses_seviyesi)
+        self.btn_muzik.text = "Müzik: Açık" if self.arka_plan_muzigi.acik else "Müzik: Kapalı"
 
     def ayarlar_kapat(self):
         self.ayar_menu.enabled = False
@@ -552,6 +667,7 @@ class Uygulama(Entity):
     def ayarlar_uygula(self):
         self.ust_menu_yazi_olcegi = self.sl_menu_yazi.deger
         self.kamera_hassasiyet = self.sl_kamera.deger
+        self.arka_plan_muzigi.ses_ayarla(self.sl_muzik.deger)
         self.butonlari_yenile()
         self.ayar_menu.enabled = False
         Kaydirici.gorunur = False
@@ -600,7 +716,7 @@ class Uygulama(Entity):
             except Exception:
                 pass
 
-        ad = [("Güneş Sistemi", None, "#ffd36b")] + [(g.v["ad"], g, g.v["renk"]) for g in self.gezegenler]
+        ad = [("Sistem Seçimi", "MENU", "#ffd36b")] + [(g.v["ad"], g, g.v["renk"]) for g in self.gezegenler]
         n = len(ad) - 1
         bas_w, bosluk = .15, .008
         sol_x = -window.aspect_ratio / 2 + 0.02
@@ -612,8 +728,9 @@ class Uygulama(Entity):
         for i, (t, g, renk) in enumerate(ad):
             gw = bas_w if i == 0 else w
             secili = g is self.secili
+            eylem = self.sistem_menusu_goster if g == "MENU" else (lambda g=g: self.sec(g, True))
             b = Dugme(parent=camera.ui, text=t, position=(x + gw / 2, .465), scale=(gw, .06),
-                      color=hx(renk, 1, 1 if secili else .38), on_click=lambda g=g: self.sec(g, True))
+                      color=hx(renk, 1, 1 if secili else .38), on_click=eylem)
             b.text_color = Color(.05, .05, .12, 1) if secili else YAZI
             b.text_entity.scale *= self.ust_menu_yazi_olcegi
             b.orijinal_renk = b.color
@@ -1017,6 +1134,13 @@ class Uygulama(Entity):
         he = mouse.hovered_entity
         return he is not None and he.has_ancestor(camera.ui)
 
+    def on_destroy(self):
+        """Uygulama kapanirken arka plan sesini serbest birak."""
+        try:
+            self.arka_plan_muzigi.durdur()
+        except Exception:
+            pass
+
     def input(self, key):
         # Atmosfere iniş animasyonu sırasında hiçbir kamera girdisi alma
         if self.gecis_aktif:
@@ -1128,8 +1252,8 @@ class Uygulama(Entity):
         g = self.secili
         if g is None:
             self.p_serit.color = Color(1, .8, .4, 1)
-            self.p_ad.text, self.p_ad.color = getattr(bilgiler, "BASLIK", "Güneş Sistemi"), Color(1, .83, .42, 1)
-            aciklama = getattr(bilgiler, "ACIKLAMA", "") or " "
+            self.p_ad.text, self.p_ad.color = self.aktif_sistem, Color(1, .83, .42, 1)
+            aciklama = self.sistem_aciklama or getattr(bilgiler, "ACIKLAMA", "") or " "
             maddeler = getattr(bilgiler, "MADDELER", [])
             self.p_bilgi.text = aciklama
             satir = sum(max(1, math.ceil(len(p) / 45)) for p in aciklama.split("\n"))

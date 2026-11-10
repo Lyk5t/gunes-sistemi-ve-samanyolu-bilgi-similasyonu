@@ -220,6 +220,8 @@ class Acilis(Entity):
         for e in self.parcalar:
             destroy(e)
         destroy(self)
+        # Açılış tamamlanınca kullanıcıdan yıldız sistemi seçmesini iste.
+        self.u.sistem_menusu_goster()
 
     def carpisma_baslat(self):
         self.patladi = True
