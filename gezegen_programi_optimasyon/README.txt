@@ -1,38 +1,106 @@
-SAMANYOLU 3B GEZEGEN LABORATUVARI
+# 🌌 Samanyolu 3B Gezegen Laboratuvarı
 
-Baslatma: calistir.bat
-Ana giris: main.py
+### Gerçekçi 3B Uzay Simülasyonu ve Astronomi Laboratuvarı
 
-Klasorler:
-  core/         Simulasyon, sahne, arayuz, doku, ses ve yapay zeka modulleri
-  assets/       Logo ve ses dosyalari
-  data/         Ozel gezegen verileri (JSON)
-  docs/         Tanitim ve proje belgeleri
-  gezegenler/   Hazir gezegen tanimlari
+<p align="center">
+  **Evreni keşfet, gezegenleri incele, astronomiyi deneyimle.**
+</p>
 
-Performans: deterministik gezegen dokulari ayni parametrelerle tekrar
-uretilmez; oturum ici onbellekten kullanilir. Mevcut ozellikler ve ana
-calistirma giris noktasi (main.py) korunmustur.
+---
 
+## 🚀 Proje Hakkında
 
-YILDIZ SISTEMI SECIMI
-Acilis animasyonundan sonra sistem secim menusu acilir:
-  - Gunes Sistemi
-  - Alpha Centauri (Proxima Centauri b ve d)
-  - TRAPPIST-1 (7 gezegen)
-  - Kepler-90 (8 gezegen)
+**Samanyolu 3B Gezegen Laboratuvarı**, Güneş Sistemi'ni üç boyutlu ortamda keşfetmek, gezegenlerin fiziksel özelliklerini incelemek ve astronomik olayları görselleştirmek amacıyla geliştirilen interaktif bir uzay simülasyonu uygulamasıdır.
 
-Simulasyonun ust cubugundaki "Sistem Secimi" dugmesiyle bu menu
-yeniden acilabilir. Otegezegenlerin olcekleri 3B goruntuleme icin
-uyarlanmistir; yildizlar arasi ve gezegenler arasi uzakliklar gercek
-uzay olceginde temsil edilmez.
+Proje; üç boyutlu grafik teknolojileri, astronomik hesaplamalar, gezegen modelleri ve bilimsel verileri bir araya getirerek kullanıcıya etkileşimli bir astronomi deneyimi sunmayı hedefler.
 
+Uygulama, eğitim, araştırma, bilimsel görselleştirme ve astronomiye ilgi duyan kullanıcılar için tasarlanmıştır.
 
-ARKA PLAN MUZIGI (SUNO)
-1. Suno'dan indirdiginiz muzik dosyasini assets klasorune kopyalayin.
-2. Dosya adini uzay_muzigi.mp3 yapin (OGG/WAV da desteklenir).
-3. Program acildiginda muzik otomatik calar ve donguye girer.
-4. Ayarlar menusunden muzigi kapatabilir ve ses seviyesini degistirebilirsiniz.
-5. Muzik dosyasi yoksa program normal sekilde calismaya devam eder.
+## ✨ Temel Özellikler
 
-Muzik yonetimi core/muzik.py dosyasindadir.
+### 🌍 3B Güneş Sistemi
+- Güneş Sistemi'nin üç boyutlu görselleştirilmesi.
+- Gezegenlerin bağımsız olarak görüntülenmesi.
+- Gezegen seçimi ve yakınlaştırma.
+- Kamera döndürme ve görüntüyü kaydırma.
+- Gezegenler arasında etkileşimli geçiş.
+
+### 🪐 Astronomik Modelleme
+- Kepler yasalarına dayalı yörünge hesaplamaları.
+- Eliptik gezegen yörüngeleri.
+- Yörünge eğikliği ve yönelimlerinin modellenmesi.
+- Gezegenlerin dönme hareketleri.
+- Zamana bağlı astronomik hareketlerin simülasyonu.
+
+### 🔬 Bilimsel Gezegen Bilgileri
+
+Gezegenlerin incelenmesinde kullanılan temel parametreler:
+
+- Kütle ve yarıçap.
+- Güneş'e uzaklık.
+- Yörünge periyodu.
+- Dönme periyodu.
+- Doğal uydu sayısı.
+- Atmosfer bileşimi.
+- Sıcaklık ve basınç bilgileri.
+
+### 🌫️ Atmosfer ve Çevresel Modelleme
+
+- Atmosfer gazlarının görselleştirilmesi.
+- Atmosfer bileşiminin grafiklerle gösterilmesi.
+- Sıcaklık ve basınç bilgilerinin sunulması.
+- Rüzgâr verilerinin görselleştirilmesi.
+
+> Not: Simülasyon değerleri ile gerçek gözlem verileri birbirinden ayrılmalıdır. Ölçüm kaynağı bulunmayan değerler bilimsel ölçüm olarak sunulmamalıdır.
+
+### 🎮 Etkileşimli Kontroller
+
+| İşlem | Kontrol |
+|---|---|
+| Kamerayı döndürme | Sol fare tuşu |
+| Kamerayı kaydırma | Sağ fare tuşu |
+| Yakınlaştırma | Fare tekerleği |
+| Gezegen seçme | Gezegen üzerine tıklama |
+| Gezegen odağı | Çift tıklama |
+| Görünümü sıfırlama | R |
+| Kamera hareketleri | WASD / Q / E |
+| Gündüz tarafını görüntüleme | L |
+| Simülasyonu durdurma | Duraklat düğmesi |
+| Simülasyon hızını değiştirme | + / - |
+
+## 🛠️ Kullanılan Teknolojiler
+
+| Teknoloji | Kullanım amacı |
+|---|---|
+| Python | Ana programlama dili |
+| Ursina Engine | 3B uygulama altyapısı |
+| Panda3D | 3B grafik ve sahne altyapısı |
+| GLSL | Grafik gölgelendiricileri |
+| NumPy / Matematik | Bilimsel hesaplamalar |
+| Pillow | Görsel ve doku işleme |
+| JSON | Gezegen ve kullanıcı verileri |
+
+## 📦 Kurulum
+
+### Gereksinimler
+
+- Python 3.10 veya üzeri önerilir.
+- Windows, Linux veya macOS.
+- OpenGL destekli grafik donanımı.
+- İnternet bağlantısı (harici veri veya kaynak indirme işlemleri için).
+
+### 1. Projeyi indirin
+
+Git üzerinden:
+
+```bash
+git clone PROJE_REPOSITORY_ADRESI
+cd gezegen_programi
+```
+
+Alternatif olarak proje ZIP dosyasını indirip bir klasöre çıkarabilirsiniz.
+
+### 2. Sanal ortam oluşturun
+
+```bash
+python -
