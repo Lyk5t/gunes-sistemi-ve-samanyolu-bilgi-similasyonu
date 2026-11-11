@@ -1,0 +1,1 @@
+Uygulama ekran görüntüleri
