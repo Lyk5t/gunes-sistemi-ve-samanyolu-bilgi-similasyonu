@@ -90,14 +90,13 @@ class YapayZekaPaneli(Entity):
 
         # ---- panel
         p = self.panel = Entity(parent=camera.ui, enabled=False, position=(-.12, 0, -2))
+        self.u.menu_baslik_ekle(p, .80, .43, surukle_y=.405, surum_x=-.30, surum_y=.375)
         Entity(parent=p, model="quad", color=PANEL, scale=(.80, .86), position=(0, 0, 1), collider="box")
         Entity(parent=p, model="quad", color=CAMGOBEGI, scale=(.80, .008), position=(0, .43, .5))
         Yazi(parent=p, text="YAPAY ZEKÂ UZAY ASİSTANI", position=(-.37, .415), scale=1.1, color=CAMGOBEGI)
         self.anahtar_modu = False             # True: bir sonraki Gönder, API anahtarını kaydeder
         self.online_btn = Dugme(parent=p, text="Online AI: KAPALI", position=(.16, .398), scale=(.24, .032),
                                 color=Color(.35, .35, .45, 1), on_click=self.online_degistir)
-        Dugme(parent=p, text="X", position=(.37, .398), scale=(.04, .032), color=Color(.7, .2, .25, 1),
-              on_click=self.kapat)
 
         self.sekme_btn = []
         for i, ad in enumerate(SEKMELER):
