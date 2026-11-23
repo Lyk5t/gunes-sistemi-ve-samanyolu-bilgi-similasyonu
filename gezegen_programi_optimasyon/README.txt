@@ -1,106 +1,60 @@
-# 🌌 Samanyolu 3B Gezegen Laboratuvarı
+SAMANYOLU 3B GEZEGEN LABORATUVARI
 
-### Gerçekçi 3B Uzay Simülasyonu ve Astronomi Laboratuvarı
+Baslatma: calistir.bat
+Ana giris: main.py
 
-<p align="center">
-  **Evreni keşfet, gezegenleri incele, astronomiyi deneyimle.**
-</p>
+Klasorler:
+  core/         Simulasyon, sahne, arayuz, doku, ses ve yapay zeka modulleri
+  assets/       Logo ve ses dosyalari
+  data/         Ozel gezegen verileri (JSON)
+  docs/         Tanitim ve proje belgeleri
+  gezegenler/   Hazir gezegen tanimlari
 
----
+Performans: deterministik gezegen dokulari ayni parametrelerle tekrar
+uretilmez; oturum ici onbellekten kullanilir. Mevcut ozellikler ve ana
+calistirma giris noktasi (main.py) korunmustur.
 
-## 🚀 Proje Hakkında
 
-**Samanyolu 3B Gezegen Laboratuvarı**, Güneş Sistemi'ni üç boyutlu ortamda keşfetmek, gezegenlerin fiziksel özelliklerini incelemek ve astronomik olayları görselleştirmek amacıyla geliştirilen interaktif bir uzay simülasyonu uygulamasıdır.
+YILDIZ SISTEMI SECIMI
+Acilis animasyonundan sonra sistem secim menusu acilir:
+  - Gunes Sistemi
+  - Alpha Centauri (Proxima Centauri b ve d)
+  - TRAPPIST-1 (7 gezegen)
+  - Kepler-90 (8 gezegen)
 
-Proje; üç boyutlu grafik teknolojileri, astronomik hesaplamalar, gezegen modelleri ve bilimsel verileri bir araya getirerek kullanıcıya etkileşimli bir astronomi deneyimi sunmayı hedefler.
+Simulasyonun ust cubugundaki "Sistem Secimi" dugmesiyle bu menu
+yeniden acilabilir. Otegezegenlerin olcekleri 3B goruntuleme icin
+uyarlanmistir; yildizlar arasi ve gezegenler arasi uzakliklar gercek
+uzay olceginde temsil edilmez.
 
-Uygulama, eğitim, araştırma, bilimsel görselleştirme ve astronomiye ilgi duyan kullanıcılar için tasarlanmıştır.
 
-## ✨ Temel Özellikler
+ARKA PLAN MUZIGI (SUNO)
+1. Suno'dan indirdiginiz muzik dosyasini assets klasorune kopyalayin.
+2. Dosya adini uzay_muzigi.mp3 yapin (OGG/WAV da desteklenir).
+3. Program acildiginda muzik otomatik calar ve donguye girer.
+4. Ayarlar menusunden muzigi kapatabilir ve ses seviyesini degistirebilirsiniz.
+5. Muzik dosyasi yoksa program normal sekilde calismaya devam eder.
 
-### 🌍 3B Güneş Sistemi
-- Güneş Sistemi'nin üç boyutlu görselleştirilmesi.
-- Gezegenlerin bağımsız olarak görüntülenmesi.
-- Gezegen seçimi ve yakınlaştırma.
-- Kamera döndürme ve görüntüyü kaydırma.
-- Gezegenler arasında etkileşimli geçiş.
+Muzik yonetimi core/muzik.py dosyasindadir.
 
-### 🪐 Astronomik Modelleme
-- Kepler yasalarına dayalı yörünge hesaplamaları.
-- Eliptik gezegen yörüngeleri.
-- Yörünge eğikliği ve yönelimlerinin modellenmesi.
-- Gezegenlerin dönme hareketleri.
-- Zamana bağlı astronomik hareketlerin simülasyonu.
 
-### 🔬 Bilimsel Gezegen Bilgileri
+GERCEKCI GEZEGEN GRAFIKLERI (core/sahne.py)
+Ek kurulum gerekmez; Ursina'nin kullandigi Panda3D GLSL golgelendiricileri kullanilir.
+  - Gunes: hareketli granulasyon, gunes lekeleri, kenar kararmasi
+  - Gezegenler: yakindan bakinca ince yuzey ayrintisi, Fresnel'li okyanus yansimasi,
+    aksam kizilligi (alacakaranlik), filmik ton esleme
+  - Gaz devleri: yavasca kivrilan bulut bantlari
+  - Dunya: bulutlarin yuzeye dusen golgesi, bulutlarin yuzeyden bagimsiz kaymasi
+  - Saturn: halkanin gezegene dusen golgesi, halkada ileri sacilma (Gunes'e karsi isik gecirme)
+Bir sey bozuk gorunurse core/sahne.py basindaki ayarlardan (GELISMIS, GUNES_GOLGELENDIRICI,
+GAZ_AKISI, ATMOSFER_PARLAMA) ilgilisini False yapin.
 
-Gezegenlerin incelenmesinde kullanılan temel parametreler:
 
-- Kütle ve yarıçap.
-- Güneş'e uzaklık.
-- Yörünge periyodu.
-- Dönme periyodu.
-- Doğal uydu sayısı.
-- Atmosfer bileşimi.
-- Sıcaklık ve basınç bilgileri.
-
-### 🌫️ Atmosfer ve Çevresel Modelleme
-
-- Atmosfer gazlarının görselleştirilmesi.
-- Atmosfer bileşiminin grafiklerle gösterilmesi.
-- Sıcaklık ve basınç bilgilerinin sunulması.
-- Rüzgâr verilerinin görselleştirilmesi.
-
-> Not: Simülasyon değerleri ile gerçek gözlem verileri birbirinden ayrılmalıdır. Ölçüm kaynağı bulunmayan değerler bilimsel ölçüm olarak sunulmamalıdır.
-
-### 🎮 Etkileşimli Kontroller
-
-| İşlem | Kontrol |
-|---|---|
-| Kamerayı döndürme | Sol fare tuşu |
-| Kamerayı kaydırma | Sağ fare tuşu |
-| Yakınlaştırma | Fare tekerleği |
-| Gezegen seçme | Gezegen üzerine tıklama |
-| Gezegen odağı | Çift tıklama |
-| Görünümü sıfırlama | R |
-| Kamera hareketleri | WASD / Q / E |
-| Gündüz tarafını görüntüleme | L |
-| Simülasyonu durdurma | Duraklat düğmesi |
-| Simülasyon hızını değiştirme | + / - |
-
-## 🛠️ Kullanılan Teknolojiler
-
-| Teknoloji | Kullanım amacı |
-|---|---|
-| Python | Ana programlama dili |
-| Ursina Engine | 3B uygulama altyapısı |
-| Panda3D | 3B grafik ve sahne altyapısı |
-| GLSL | Grafik gölgelendiricileri |
-| NumPy / Matematik | Bilimsel hesaplamalar |
-| Pillow | Görsel ve doku işleme |
-| JSON | Gezegen ve kullanıcı verileri |
-
-## 📦 Kurulum
-
-### Gereksinimler
-
-- Python 3.10 veya üzeri önerilir.
-- Windows, Linux veya macOS.
-- OpenGL destekli grafik donanımı.
-- İnternet bağlantısı (harici veri veya kaynak indirme işlemleri için).
-
-### 1. Projeyi indirin
-
-Git üzerinden:
-
-```bash
-git clone PROJE_REPOSITORY_ADRESI
-cd gezegen_programi
-```
-
-Alternatif olarak proje ZIP dosyasını indirip bir klasöre çıkarabilirsiniz.
-
-### 2. Sanal ortam oluşturun
-
-```bash
-python -
+GERCEK GEZEGEN KONUMLARI (core/canli_konum.py)
+Program acilinca Gunes Sistemi'ndeki gezegenler, bugunun gercek konumlarina yerlestirilir.
+  - Kaynak: NASA JPL Horizons (internet gerekir, ek kurulum yok). Internet yoksa JPL'nin
+    yaklasik yorunge elemanlariyla yerelde hesaplanir; alt cubugun ustundeki yazi kaynagi gosterir.
+  - G tusu ya da "Gercek Konum (G)" dugmesi: gezegenleri gercek zamana esitler ve simulasyonu
+    DURAKLATIR (1x hizda gezegenler saniyede ~30 gun ilerler; duraklatmazsan hemen uzaklasirlar).
+    Devam etmek icin "Baslat" dugmesine bas. Sonuc konsola da yazilir.
+  - Mesafeler ekrana sigsin diye olcekli, yonler (boylamlar) gercektir.

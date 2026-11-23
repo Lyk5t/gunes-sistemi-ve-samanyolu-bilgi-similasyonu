@@ -2,8 +2,7 @@
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('assets', 'assets'), ('data', 'data')]
-# Belgeler klasörü yalnızca kaynak proje içindir; çalıştırılabilir dosyaya eklenmez.
+datas = []
 binaries = []
 hiddenimports = []
 hiddenimports += collect_submodules('gezegenler')
@@ -15,7 +14,7 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 a = Analysis(
     ['main.py'],
-    pathex=['core'],
+    pathex=[],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

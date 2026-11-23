@@ -1,5 +1,5 @@
 """
-Samanyolu 3B Gezegen Laboratuvarı (masaüstü programı, Python + Ursina)
+Samanyolu 3B Gezegen Similasyonu (masaüstü programı, Python + Ursina)
 
 Kurulum:    pip install ursina        (Windows'ta calistir.bat bunu kendisi yapar)
 Çalıştırma: python main.py
@@ -13,6 +13,9 @@ import os
 import time
 import random
 import sys
+import textwrap
+import webbrowser
+from datetime import timedelta
 
 from PIL import Image, ImageDraw
 
@@ -29,6 +32,7 @@ import bilgiler
 import dokular
 import gezegenler
 import ses
+import canli_konum
 from muzik import ArkaPlanMuzigi
 from acilis import Acilis
 from arayuz import YAZI_OLCEK, Dugme, Kaydirici, Yazi, dongu_dugme
@@ -80,6 +84,34 @@ PALET = ["#ff7ac8", "#7ad8ff", "#ffd36b", "#8cf29b", "#b79bff", "#ff9a6b"]
 PANEL = Color(.06, .07, .18, .88)
 YAZI = Color(.93, .92, 1, 1)
 SOLUK = Color(.68, .67, .82, 1)
+
+# --- sağ bilgi paneli yerleşimi (ekran birimi; 1 = ekran yüksekliği) ---
+SARMA_KARAKTER = 44    # açıklama metni bir satırda en fazla bu kadar karakter
+SATIR_YUKSEKLIK = .02  # panel metinlerinde bir satırın kapladığı dikey alan
+
+
+def metni_sar(metin, genislik=SARMA_KARAKTER):
+    """Metni kelime bölmeden satırlara ayırır (Text.wordwrap yerine kendi sarmamız)."""
+    satirlar = []
+    for p in metin.split("\n"):
+        satirlar += textwrap.wrap(p, genislik) or [""]
+    return satirlar
+
+SURUM_KLASORU = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else ROOT
+VERSION_DOSYASI = os.path.join(SURUM_KLASORU, "version.txt")
+PROGRAM_ADRESI = "https://bozok.edu.tr/okul/bogazliyan-myo"
+
+
+def surum_oku():
+    """Sürüm numarasını program klasöründeki version.txt dosyasından okur."""
+    try:
+        with open(VERSION_DOSYASI, encoding="utf-8") as f:
+            return f.read().strip() or "1.0.0"
+    except OSError:
+        return "1.0.0"
+
+
+SURUM = surum_oku()
 
 # --- kamera ayarları ---
 DONDUR_HIZ = 200.0     # derece / ekran birimi (ayarlardaki 'Kamera Hassasiyeti' ile çarpılır)
@@ -152,11 +184,18 @@ def ozel_yukle():
 class Uygulama(Entity):
     def __init__(self):
         super().__init__()
+        self.menu_surukleme = None
+        self.menu_surukleme_fare = None
+        self.menu_surukleme_baslangic = None
+        self.menu_surukleme_kayit = []
         camera.clip_plane_far = 5000
         camera.fov = 60
         window.color = Color(.02, .03, .08, 1)
         window.exit_button.visible = False
         window.fps_counter.enabled = False
+        for sayac in ("entity_counter", "collider_counter"):      # sağ üstteki 'entities / colliders' yazıları
+            if hasattr(window, sayac):
+                getattr(window, sayac).enabled = False
         sahne_kur()
 
         # ---------- MODEL ----------
@@ -170,6 +209,7 @@ class Uygulama(Entity):
 
         self.secili = None
         self.T = 0.0
+        self.konum_istek, self.konum_sonuc, self.konum_T0 = None, None, 0.0
         self.calisiyor = True
         # Suno ile hazirlanan arka plan muzigi: program boyunca tek ses nesnesi kullanilir.
         self.arka_plan_muzigi = ArkaPlanMuzigi(ASSETS)
@@ -251,6 +291,7 @@ class Uygulama(Entity):
         Entity(parent=self.sag_tik_menu, model="quad", color=PANEL, scale=(.40, .42), position=(0, 0, 1), collider="box")
         Entity(parent=self.sag_tik_menu, model="quad", color=Color(1, .37, .63, 1), scale=(.40, .006), position=(0, .207, .5))
         self.st_baslik = Yazi(parent=self.sag_tik_menu, text="Gezegen", position=(-.18, .190), scale=0.95, color=Color(1, .83, .42, 1))
+        self.menu_baslik_ekle(self.sag_tik_menu, .40, .21, surukle_y=.18, surum_x=.12, surum_y=.18)
         Dugme(parent=self.sag_tik_menu, text="Gezegende Gez", position=(0, .125), scale=(.36, .04),
               color=Color(1, .37, .63, 1), on_click=self.yuzey_modunu_baslat)
 
@@ -318,8 +359,52 @@ class Uygulama(Entity):
         self.alt_cubuk_kur()
         self.donus_kur()
         self.yz = YapayZekaPaneli(self)      # yapay zekâ paneli (yz_arayuz.py)
+        self.ust_butonlari_esitle()
 
         self.sec(None)
+
+    def menu_baslik_ekle(self, panel, genislik, ust, surukle_y=None, surum_x=None, surum_y=None):
+        """Panelin üst şeridini sürükleme alanı olarak tanımlar."""
+        surukle_y = ust - .025 if surukle_y is None else surukle_y
+        tutamak = Entity(parent=panel, model="quad", color=Color(1, 1, 1, 0),
+                         scale=(genislik, .055), position=(0, surukle_y, -.15),
+                         collider="box")
+        self.menu_surukleme_kayit.append((panel, tutamak))
+        # Sürüm bağlantısı menülerin içinde değil, ana ekranın sağ altındadır.
+        Dugme(parent=panel, text="X", position=(genislik / 2 - .035, surukle_y, -.8),
+              scale=(.045, .032), color=Color(.72, .18, .25, 1),
+              on_click=lambda p=panel: self.menu_panel_kapat(p))
+
+    def menu_panel_kapat(self, panel):
+        """Menü panellerini türünden bağımsız ve güvenli biçimde kapatır."""
+        if panel is getattr(self, "sistem_menu", None):
+            destroy(panel)
+            self.sistem_menu = None
+            self.enabled = True
+        elif panel is getattr(self, "sag_tik_menu", None):
+            panel.enabled = False
+        elif panel is getattr(getattr(self, "yz", None), "panel", None):
+            self.yz.kapat()
+        elif panel is getattr(self, "ayar_menu", None):
+            self.ayarlar_kapat()
+        elif panel is getattr(self, "form", None):
+            self.form_kapat()
+        elif panel is getattr(self, "hak", None):
+            self.hakkinda_kapat()
+        else:
+            panel.enabled = False
+
+    def menu_suruklemeyi_baslat(self):
+        he = mouse.hovered_entity
+        if he is None:
+            return False
+        for panel, tutamak in reversed(self.menu_surukleme_kayit):
+            if panel.enabled and (he == tutamak or he.has_ancestor(tutamak)):
+                self.menu_surukleme = panel
+                self.menu_surukleme_fare = (mouse.x, mouse.y)
+                self.menu_surukleme_baslangic = tuple(panel.position)
+                return True
+        return False
 
     def sistem_menusu_goster(self):
         """Açılış animasyonundan sonra sistem seçim ekranını gösterir."""
@@ -329,6 +414,7 @@ class Uygulama(Entity):
         menu = self.sistem_menu = Entity(parent=camera.ui, z=-4)
         Entity(parent=menu, model="quad", scale=(4, 2), color=Color(.008, .012, .035, .96), z=1)
         Entity(parent=menu, model="quad", scale=(1.02, .66), color=Color(.035, .055, .12, .98), z=.8)
+        self.menu_baslik_ekle(menu, 1.02, .33, surukle_y=.30, surum_x=.43, surum_y=.29)
         Entity(parent=menu, model="quad", scale=(1.02, .008), position=(0, .326, .5),
                color=Color(1, .76, .32, 1))
 
@@ -347,7 +433,7 @@ class Uygulama(Entity):
         Yazi(parent=menu, text="Bilgisayar Programlama (Uzaktan Eğitim)",
              origin=(-.5, 0), position=(-.32, .218), scale=.78, color=YAZI)
 
-        Yazi(parent=menu, text="SAMANYOLU 3B GEZEGEN LABORATUVARI",
+        Yazi(parent=menu, text="SAMANYOLU 3B GEZEGEN SİMİLASYONU",
              origin=(0, 0), position=(0, .135), scale=1.25, color=Color(1, .83, .48, 1))
         Yazi(parent=menu, text="Keşfetmek istediğiniz yıldız sistemini seçin",
              origin=(0, 0), position=(0, .075), scale=.95, color=YAZI)
@@ -402,6 +488,7 @@ class Uygulama(Entity):
                               self.gezegenler[0] if self.gezegenler else None)
         self.aktif_sistem = sistem_adi
         self.T = 0.0
+        self.konum_istek = None          # yeni sistem yüklendi: gerçek konumlar yeniden alınır
         self.serbest_merkez = Vec3(0, 0, 0)
         self.pan_ofset = Vec3(0, 0, 0)
         self.hedef = Vec3(0, 0, 0)
@@ -434,6 +521,60 @@ class Uygulama(Entity):
             fuze.play()
         except Exception:
             pass
+
+    # ================= gerçek gezegen konumları (NASA JPL) =================
+    def _konum_yazisi(self, metin):
+        y = getattr(self, "konum_yazi", None)
+        if y is not None and y.text != metin:
+            y.text = metin
+
+    def gercek_konum_iste(self, kullanici=True):
+        """Gezegenlerin gerçek güncel konumlarını arka planda ister (NASA JPL Horizons; olmazsa yerel hesap).
+        kullanici=True (G tuşu / düğme): konumlar uygulanınca simülasyon duraklatılır, böylece gezegenler
+        gerçek yerlerinde görünür kalır (1x hızda bile gezegenler saniyede ~30 gün ilerler)."""
+        if self.aktif_sistem != "Güneş Sistemi":
+            self._konum_yazisi("Gerçek konumlar yalnızca Güneş Sistemi'nde kullanılabilir")
+            return
+        self.konum_sonuc = canli_konum.baslat()
+        self.konum_T0 = self.T
+        self.konum_istek = "calisiyor"
+        self.konum_duraklat = kullanici
+        self._konum_yazisi("Gerçek konumlar alınıyor...")
+        print("[Gerçek konum] istek gönderildi")
+
+    def gercek_konum_isle(self):
+        if self.aktif_sistem != "Güneş Sistemi":
+            self._konum_yazisi("")
+            return
+        if self.konum_istek is None:
+            self.gercek_konum_iste(kullanici=False)
+            return
+        s = self.konum_sonuc
+        if self.konum_istek == "calisiyor":
+            if not s.bitti:
+                return
+            for g in self.gezegenler:
+                ad = g.v["ad"]
+                if not g.ozel and ad in s.boylam:
+                    g.gercek_faz(s.boylam[ad], self.konum_T0)
+            self.konum_istek = "bitti"
+            print("[Gerçek konum] uygulandı:", {a: round(d, 1) for a, d in s.boylam.items()}, set(s.kaynak.values()))
+            if getattr(self, "konum_duraklat", False):
+                self.konum_duraklat = False
+                self.T = self.konum_T0
+                for g in self.gezegenler:
+                    if not g.ozel and g.v["ad"] in s.boylam:
+                        g.gercek_faz(s.boylam[g.v["ad"]], self.T)
+                if self.calisiyor:
+                    self.oynat_durdur()
+        jpl = sum(1 for k in s.kaynak.values() if k == "NASA JPL")
+        kaynak = ("NASA JPL (canlı)" if jpl == len(s.kaynak) else
+                  "NASA JPL + yerel hesap" if jpl else "yerel hesap (çevrimdışı)")
+        try:
+            tarih = f"{s.an + timedelta(days=self.T - self.konum_T0):%d.%m.%Y}"
+        except Exception:
+            tarih = "-"
+        self._konum_yazisi(f"Gerçek konumlar: {kaynak} | Tarih: {tarih}")
 
     def etkilesim_sesi_cal(self, hiz=2.2):
         try:
@@ -478,26 +619,24 @@ class Uygulama(Entity):
 
         Entity(parent=ui, model="quad", color=PANEL, scale=(panel_w, 1.2), position=(panel_merkez_x, 0, 1))
         self.p_serit = Entity(parent=ui, model="quad", color=Color(1, .8, .4, 1), scale=(panel_w, .008),
-                              position=(panel_merkez_x, .46, .5))
+                              position=(panel_merkez_x, .437, .5))   # üst düğmelerin altında
 
         self.p_ad = Yazi(parent=ui, text=" ", position=(self.PX, .425), scale=1.9)
         self.p_bilgi = Yazi(parent=ui, text=" ", position=(self.PX, .35), scale=0.85, color=SOLUK)
-        self.p_bilgi.wordwrap = 45
 
         self.p_stat = Yazi(parent=ui, text=" ", position=(self.PX, .15), scale=0.85, color=YAZI)
-        self.p_stat.wordwrap = 45
 
         self.p_atm = Yazi(parent=ui, text="ATMOSFER BİLEŞİMİ", position=(self.PX, .02), scale=.8)
 
         self.canli_grup = Entity(parent=ui)
         self.p_canli_baslik = Yazi(parent=self.canli_grup, text="CANLI ATMOSFER VERİSİ (simüle)",
                                    position=(self.PX, -.04), scale=.8)
-        self.satirlar = []
+        self.satirlar = []          # (yazı, çizgi grafiği)  — y konumları panel_yenile'de hesaplanır
+        self.satir_y = [0.0] * len(CANLI)
         for i, (ad, _, birim, _, renk) in enumerate(CANLI):
-            y = -.09 - i * .10
-            t = Yazi(parent=self.canli_grup, text=" ", position=(self.PX, y), scale=.85, color=hx(renk, 1, 1.2))
+            t = Yazi(parent=self.canli_grup, text=" ", position=(self.PX, -.09), scale=.85, color=hx(renk, 1, 1.2))
             e = Entity(parent=self.canli_grup, color=hx(renk))
-            self.satirlar.append((t, e, y))
+            self.satirlar.append((t, e))
 
     def alt_cubuk_kur(self):
         self.alt_cubuk_grup = Entity(parent=camera.ui)
@@ -515,20 +654,39 @@ class Uygulama(Entity):
         Dugme(parent=ui, text="+ Yeni Gezegen", position=(sol_x + .40, -.465), scale=(.18, .04),
               color=Color(1, .37, .63, 1), on_click=self.form_ac)
 
-        Yazi(parent=ui, text="Sol Sürükle: Döndür | Sağ Sürükle: Kaydır | Sağ Tık: Menü | Tekerlek: Zoom | Çift Tık: Odaklan | R: Sıfırla | L: Gündüz",
+        Dugme(parent=ui, text="Gerçek Konum (G)", position=(sol_x + .14, -.412), scale=(.19, .035),
+              color=Color(.18, .52, .38, 1), on_click=self.gercek_konum_iste)
+        self.konum_yazi = Yazi(parent=ui, text="", position=(sol_x + .25, -.402), scale=.85,
+                               color=Color(.65, 1, .75, 1))
+        Yazi(parent=ui, text="Sol Sürükle: Döndür | Sağ Sürükle: Kaydır | Sağ Tık: Menü | Tekerlek: Zoom | Çift Tık: Odaklan | R: Sıfırla | L: Gündüz | G: Gerçek Konum",
              position=(sol_x + .53, -.452), scale=0.9, color=SOLUK)
+        Dugme(parent=camera.ui, text="v" + SURUM,
+              position=(window.aspect_ratio / 2 - .10, -.465), scale=(.16, .032),
+              color=Color(.18, .25, .38, 1), on_click=lambda: webbrowser.open(PROGRAM_ADRESI))
 
         sag_x = window.aspect_ratio / 2
-        Dugme(parent=camera.ui, text="Ayarlar", position=(sag_x - 0.34, .465), scale=(.12, .04),
-              color=Color(.2, .5, .7, 1), on_click=self.ayarlar_ac)
-        Dugme(parent=camera.ui, text="Hakkında", position=(sag_x - 0.21, .465), scale=(.12, .04),
-              color=Color(1, .37, .63, 1), on_click=self.hakkinda_ac)
-        Dugme(parent=camera.ui, text="Çıkış", position=(sag_x - 0.08, .465), scale=(.12, .04),
-              color=Color(.8, .2, .25, 1), on_click=application.quit)
+        self.ust_butonlar = [
+            Dugme(parent=camera.ui, text="Ayarlar", position=(sag_x - 0.34, .465), scale=(.12, .04),
+                  color=Color(.2, .5, .7, 1), on_click=self.ayarlar_ac),
+            Dugme(parent=camera.ui, text="Hakkında", position=(sag_x - 0.21, .465), scale=(.12, .04),
+                  color=Color(1, .37, .63, 1), on_click=self.hakkinda_ac),
+            Dugme(parent=camera.ui, text="Çıkış", position=(sag_x - 0.08, .465), scale=(.12, .04),
+                  color=Color(.8, .2, .25, 1), on_click=application.quit),
+        ]
+
+    def ust_butonlari_esitle(self):
+        """Sağ üstteki 4 düğmenin (Yapay Zekâ, Ayarlar, Hakkında, Çıkış) yazı boyutunu eşitler."""
+        try:
+            ref = self.ust_butonlar[0].text_entity.world_scale       # 'Ayarlar' düğmesi ölçü alınır
+            for b in [self.yz.ac_btn] + self.ust_butonlar[1:]:
+                b.text_entity.world_scale = ref
+        except (AttributeError, IndexError):
+            pass
 
     def ayarlar_kur(self):
         self.ust_menu_yazi_olcegi = 1.0
         f = self.ayar_menu = Entity(parent=camera.ui, enabled=False, z=-2)
+        self.menu_baslik_ekle(f, .80, .43, surukle_y=.405, surum_x=.30, surum_y=.405)
         Entity(parent=f, model="quad", color=PANEL, scale=(.50, .68), position=(0, 0, 1))
         Entity(parent=f, model="quad", color=Color(.4, .8, 1, 1), scale=(.50, .008), position=(0, .336, .5))
         Yazi(parent=f, text="AYARLAR", position=(-.23, .29), scale=1.2, color=Color(.4, .8, 1, 1))
@@ -570,6 +728,7 @@ class Uygulama(Entity):
 
     def form_kur(self):
         f = self.form = Entity(parent=camera.ui, enabled=False, z=-2)
+        self.menu_baslik_ekle(f, .80, .43, surukle_y=.405, surum_x=.30, surum_y=.405)
         Entity(parent=f, model="quad", color=PANEL, scale=(.8, .86), position=(0, 0, 1))
         Entity(parent=f, model="quad", color=Color(1, .37, .63, 1), scale=(.8, .008), position=(0, .426, .5))
 
@@ -601,6 +760,7 @@ class Uygulama(Entity):
     def hakkinda_kur(self):
         import hakkinda
         h = self.hak = Entity(parent=camera.ui, enabled=False)
+        self.menu_baslik_ekle(h, .62, .38, surukle_y=.355, surum_x=.20, surum_y=.355)
         Entity(parent=h, model="quad", color=Color(.05, .06, .16, .97), scale=(.62, .76), position=(0, 0, -1))
         Entity(parent=h, model="quad", color=Color(1, .37, .63, 1), scale=(.62, .008), position=(0, .378, -1.05))
         y = .345
@@ -1005,7 +1165,15 @@ class Uygulama(Entity):
                scale=(0.55, 0.75, 0.32), position=(0, 1.3, -0.32), unlit=True)
         # Sırttaki Çantanın Arkasına Okul Yazısı (Text bileşeni)
         Text(parent=self.astronot, text="BOĞAZLIYAN M.Y.O.", origin=(0, 0),
-             position=(0, 1.38, -0.49), rotation=(0, 180, 0), scale=2.5, color=Color(1, 0.85, 0.2, 1))
+             position=(0, 1.08, -0.49), rotation=(0, 180, 0), scale=2.5, color=Color(1, 0.85, 0.2, 1))
+        # Sırt çantasının arkasına üniversite logosu (assets/bozok_logo.png)
+        logo_yolu = os.path.join(ASSETS, "bozok_logo.png")
+        if os.path.isfile(logo_yolu):
+            try:
+                Entity(parent=self.astronot, model="quad", texture=Texture(Image.open(logo_yolu).convert("RGBA")),
+                       scale=(0.36, 0.36), position=(0, 1.45, -0.495), double_sided=True, unlit=True)
+            except Exception as hata:
+                print("Sırt logosu okunamadı:", hata)
 
         # Kask ve Altın/Mavi Vizör
         Entity(parent=self.astronot, model="sphere", color=Color(0.98, 0.98, 1.0, 1),
@@ -1183,6 +1351,8 @@ class Uygulama(Entity):
             self.yakinlas(1.0 / YAKINLASMA)
 
         elif key == "left mouse down":
+            if self.menu_suruklemeyi_baslat():
+                return
             if not self.ui_ustunde():
                 self.sag_tik_menu.enabled = False
                 self.dunya_uyari.enabled = False
@@ -1204,6 +1374,9 @@ class Uygulama(Entity):
                 self.surukle_baslat("pan", "right" if key.startswith("right") else "middle")
 
         elif key == "left mouse up":
+            self.menu_surukleme = None
+            self.menu_surukleme_fare = None
+            self.menu_surukleme_baslangic = None
             self.surukle_sol = False
             if self.surukle_tus == "left":
                 mod = self.surukle_mod
@@ -1227,6 +1400,8 @@ class Uygulama(Entity):
             self.gorunumu_sifirla()
         elif key == "l" and self.klavye_serbest():
             self.isik_tarafi(True)
+        elif key == "g" and self.klavye_serbest():
+            self.gercek_konum_iste()
 
         elif key == "escape":
             if self.yz.acik():
@@ -1255,9 +1430,9 @@ class Uygulama(Entity):
             self.p_ad.text, self.p_ad.color = self.aktif_sistem, Color(1, .83, .42, 1)
             aciklama = self.sistem_aciklama or getattr(bilgiler, "ACIKLAMA", "") or " "
             maddeler = getattr(bilgiler, "MADDELER", [])
-            self.p_bilgi.text = aciklama
-            satir = sum(max(1, math.ceil(len(p) / 45)) for p in aciklama.split("\n"))
-            self.p_stat.position = (self.PX, max(-.35, .35 - satir * .035 - .02))
+            satirlar = metni_sar(aciklama)
+            self.p_bilgi.text = "\n".join(satirlar)
+            self.p_stat.position = (self.PX, max(-.35, .35 - len(satirlar) * SATIR_YUKSEKLIK - .03))
             self.p_stat.text = "\n".join(f"{b}: {d}" for b, d in maddeler) or " "
             self.p_atm.enabled = False
             self.canli_grup.enabled = False
@@ -1266,39 +1441,57 @@ class Uygulama(Entity):
         v = g.v
         self.p_serit.color = hx(v["renk"])
         self.p_ad.text, self.p_ad.color = v["ad"], hx(v["renk"], 1, 1.15)
-        self.p_bilgi.text = v["bilgi"]
-        satir = sum(max(1, math.ceil(len(p) / 45)) for p in v["bilgi"].split("\n"))
-        self.p_stat.position = (self.PX, max(-.15, .35 - satir * .035 - .02))
+
+        # --- yerleşim yukarıdan aşağıya akar: açıklama -> sayısal bilgiler -> atmosfer -> canlı grafikler ---
+        satirlar = metni_sar(v["bilgi"])
+        self.p_bilgi.text = "\n".join(satirlar)
+        y = .35 - len(satirlar) * SATIR_YUKSEKLIK - .03            # sayısal bilgilerin üstü
+        self.p_stat.position = (self.PX, y)
         km = f"{v['yaricap_km']:,.0f}".replace(",", " ")
         self.p_stat.text = (f"Yarıçap: {km} km\nGüneş’e uzaklık: {v['au']} AU\n"
                             f"Yörünge periyodu: {v['periyot']} gün\nBilinen uydu: {v['uydu']}")
+        y -= 4 * SATIR_YUKSEKLIK + .03                             # 4 satırlık blok + boşluk
+
         self.p_atm.enabled = True
         self.p_atm.color = hx(v["renk"], 1, 1.15)
+        self.p_atm.position = (self.PX, y)
         self.canli_grup.enabled = True
 
-        top = sum(y for _, y in v["gazlar"])
+        bar_y = y - .035
+        top = sum(a for _, a in v["gazlar"])
         x = self.PX
-        for i, (a, y) in enumerate(v["gazlar"]):
-            c = hx(gezegenler.GAZ_RENK.get(a, PALET[i % len(PALET)])) if hasattr(gezegenler, 'GAZ_RENK') else hx(PALET[i % len(PALET)])
-            w = y / top * .44
+        for i, (ad, oran) in enumerate(v["gazlar"]):
+            c = hx(gezegenler.GAZ_RENK.get(ad, PALET[i % len(PALET)])) if hasattr(gezegenler, 'GAZ_RENK') else hx(PALET[i % len(PALET)])
+            w = oran / top * .44
             self.dyn.append(Entity(parent=camera.ui, model="quad", color=c, scale=(w, .018),
-                                   origin=(-.5, 0), position=(x, -.01, -.01)))
+                                   origin=(-.5, 0), position=(x, bar_y, -.01)))
             x += w
-            lx, ly = self.PX + (i % 2) * .22, -.04 - (i // 2) * .035
+            lx, ly = self.PX + (i % 2) * .22, bar_y - .03 - (i // 2) * .035
             self.dyn.append(Entity(parent=camera.ui, model="quad", color=c, scale=(.012, .012),
                                    position=(lx + .006, ly - .011, -.01)))
-            self.dyn.append(Yazi(parent=camera.ui, text=f"{a} %{y / top * 100:.1f}",
+            self.dyn.append(Yazi(parent=camera.ui, text=f"{ad} %{oran / top * 100:.1f}",
                                  position=(lx + .02, ly), scale=.8, color=YAZI))
+
+        # canlı veri başlığı ve üç grafik: gaz satırlarının ALTINDAN başlar (üst üste binmez)
+        gaz_satir = math.ceil(len(v["gazlar"]) / 2)
+        y = bar_y - .03 - gaz_satir * .035 - .02
+        self.p_canli_baslik.position = (self.PX, y)
+        y -= .045
+        for i in range(len(self.satir_y)):
+            self.satir_y[i] = y
+            self.satirlar[i][0].position = (self.PX, y)
+            y -= .125                                              # her blok: yazı + grafik
 
     def canli(self):
         g = self.secili
         g.canli_guncelle()
-        for L, (t, e, y), (ad, _, birim, _, renk) in zip(g.canli, self.satirlar, gezegenler.CANLI if hasattr(gezegenler, 'CANLI') else CANLI):
+        for L, (t, e), y, (ad, _, birim, _, renk) in zip(g.canli, self.satirlar, self.satir_y,
+                                                            gezegenler.CANLI if hasattr(gezegenler, 'CANLI') else CANLI):
             t.text = f"{ad}: {bicim(L['v'])} {birim}"
             h = L["h"]
             lo, hi = min(h), max(h)
             r = (hi - lo) or 1
-            e.model = Mesh(vertices=[Vec3(self.PX + i / 39 * .44, y - .11 + (v - lo) / r * .05, -.02)
+            e.model = Mesh(vertices=[Vec3(self.PX + i / 39 * .44, y - .085 + (v - lo) / r * .045, -.02)
                                      for i, v in enumerate(h)], mode="line", thickness=2)
 
     # ================= KAMERA SİSTEMİ (Universe Sandbox tarzı, kutupsuz trackball) =================
@@ -1777,6 +1970,19 @@ class Uygulama(Entity):
         self.kamera_yonlendir()
 
     def update(self):
+        if self.menu_surukleme is not None:
+            if held_keys["left mouse"]:
+                dx = mouse.x - self.menu_surukleme_fare[0]
+                dy = mouse.y - self.menu_surukleme_fare[1]
+                self.menu_surukleme.position = (
+                    self.menu_surukleme_baslangic[0] + dx,
+                    self.menu_surukleme_baslangic[1] + dy,
+                    self.menu_surukleme_baslangic[2],
+                )
+            else:
+                self.menu_surukleme = None
+                self.menu_surukleme_fare = None
+                self.menu_surukleme_baslangic = None
         dt = time.dt
 
         if self.yuzey_modu and self.astronot:
@@ -1845,6 +2051,12 @@ class Uygulama(Entity):
 
         if self.calisiyor:
             self.T += dt * 30 * HIZLAR[self.hiz]
+        try:
+            self.gercek_konum_isle()
+        except Exception as hata:
+            if not getattr(self, "_konum_hata_yazildi", False):
+                self._konum_hata_yazildi = True
+                print("[Gerçek konum] hata:", repr(hata))
 
         self.donus_guncelle()
         donsun = self.donme_aktif_mi()
@@ -1953,6 +2165,10 @@ class Uygulama(Entity):
         if self.hak.enabled:
             self.kayan_yazi(dt)
         self.canli_t += dt
+        self.buton_t = getattr(self, "buton_t", 0.0) + dt
+        if self.buton_t > 1.0:                  # üst düğme yazıları bir şekilde değişirse tekrar eşitle
+            self.buton_t = 0.0
+            self.ust_butonlari_esitle()
         if self.canli_t > .5 and self.secili is not None and not self.yuzey_modu and not self.gecis_aktif:
             self.canli_t = 0
             self.canli()
@@ -1962,7 +2178,7 @@ if __name__ == "__main__":
     from panda3d.core import loadPrcFileData
     loadPrcFileData("", "framebuffer-multisample 1\nmultisamples 4")
 
-    app = Ursina(title="Samanyolu 3B Gezegen Laboratuvarı", borderless=False, fullscreen=True)
+    app = Ursina(title="Samanyolu 3B Gezegen Similasyonu", borderless=False, fullscreen=True)
 
     try:
         from panda3d.core import AntialiasAttrib
